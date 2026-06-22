@@ -18,6 +18,11 @@ const POS = [
   { x: 110, y: 650 }, { x: 290, y: 790 }, { x: 110, y: 930 },
 ];
 
+// A small SVG noise tile, baked once and tiled by the browser as a background
+// image — far cheaper than a live, full-area feTurbulence filter.
+const GRAIN =
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")";
+
 // Smooth S-curve through the anchor points for the dashed bronze trail.
 function buildPath(points) {
   let d = `M ${points[0].x} ${points[0].y}`;
@@ -54,21 +59,19 @@ export default function QuestBoard() {
         .day-tile:focus-visible{filter:drop-shadow(0 0 6px rgba(217,164,65,0.7));}
       `}</style>
 
-      {/* Off-screen SVG defs: paper grain + the two tile clip shapes. */}
+      {/* Cheap pre-baked paper grain, fixed behind all content (z-index 0).
+          Replaces a live full-area feTurbulence filter, which blacked out
+          content via mix-blend and hung the rasterizer. */}
+      <div style={{ position: 'fixed', inset: 0, backgroundImage: GRAIN, opacity: 0.05, pointerEvents: 'none', zIndex: 0 }} />
+
+      {/* Off-screen SVG defs: the two tile clip shapes used by DayTile. */}
       <svg style={{ position: 'absolute', width: 0, height: 0 }}>
-        <filter id="grain" x="0" y="0" width="100%" height="100%">
-          <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="1" stitchTiles="stitch" result="noise" />
-          <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.06 0" />
-        </filter>
         <defs>
           <clipPath id="sealBlob" clipPathUnits="objectBoundingBox"><path d="M0.50,0.05 C0.70,0.05 0.90,0.20 0.92,0.45 C0.94,0.68 0.78,0.90 0.52,0.93 C0.28,0.96 0.08,0.78 0.06,0.52 C0.04,0.28 0.22,0.08 0.50,0.05 Z" /></clipPath>
           <clipPath id="shieldBlob" clipPathUnits="objectBoundingBox"><path d="M0.50,0.02 L0.92,0.12 C0.94,0.40 0.90,0.62 0.74,0.80 C0.64,0.90 0.56,0.96 0.50,0.99 C0.44,0.96 0.36,0.90 0.26,0.80 C0.10,0.62 0.06,0.40 0.08,0.12 Z" /></clipPath>
         </defs>
       </svg>
-      <div className="w-full" style={{ maxWidth: 420, position: 'relative' }}>
-        {/* Paper-grain texture, scoped to the content column (cheaper to raster
-            than a full-viewport filter). */}
-        <div style={{ position: 'absolute', inset: 0, filter: 'url(#grain)', opacity: 0.5, mixBlendMode: 'overlay', pointerEvents: 'none', zIndex: 0 }} />
+      <div className="w-full" style={{ maxWidth: 420, position: 'relative', zIndex: 1 }}>
         {/* Header: portrait + level, week title, XP bar */}
         <div className="flex items-start gap-4 mb-5">
           <button onClick={() => setShowPortrait(true)} aria-label="View portrait" style={{ position: 'relative', flexShrink: 0, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
