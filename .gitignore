@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Claude Code local-only settings (machine-specific permissions)
+.claude/settings.local.json
+
+# Vercel CLI local link/config
+.vercel
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
