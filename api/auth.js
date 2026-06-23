@@ -30,15 +30,38 @@ export default async function handler(req, res) {
       return sendError(res, loginRes.status === 401 ? 401 : 502, message);
     }
 
-    const { session_id, user_id } = await loginRes.json();
+    const body = await loginRes.json().catch(() => ({}));
+
+    // The session id may arrive in the JSON body (session_id) or only via
+    // Peloton's own Set-Cookie header — capture whichever is present. Without a
+    // session, "login" would succeed with a junk cookie and every authed call
+    // (e.g. classes) would 401 in a loop, so fail loudly instead.
+    let sessionId = body.session_id;
+    if (!sessionId) {
+      const setCookies = loginRes.headers.getSetCookie?.() ||
+        [loginRes.headers.get('set-cookie')].filter(Boolean);
+      for (const c of setCookies) {
+        const m = c?.match(new RegExp(`${SESSION_COOKIE}=([^;]+)`));
+        if (m) { sessionId = m[1]; break; }
+      }
+    }
+    // Diagnostic (no secrets): shows where the session came from if logins
+    // misbehave. Safe to remove once auth is confirmed stable.
+    console.log('[auth] ok=%s bodyKeys=%j sessionResolved=%s', loginRes.ok, Object.keys(body), !!sessionId);
+
+    if (!sessionId) return sendError(res, 502, 'Login succeeded but no session was returned');
+
+    // Only mark Secure over real HTTPS; on `vercel dev` (http://localhost)
+    // a Secure cookie can be dropped, which would silently break the session.
+    const isHttps = (req.headers['x-forwarded-proto'] || '').includes('https');
 
     // ~30-day session. httpOnly so client JS can't read it; SameSite=Lax is
     // fine since the SPA and the API share an origin on Vercel.
     res.setHeader(
       'Set-Cookie',
-      `${SESSION_COOKIE}=${session_id}; HttpOnly; Path=/; Max-Age=${60 * 60 * 24 * 30}; SameSite=Lax; Secure`
+      `${SESSION_COOKIE}=${sessionId}; HttpOnly; Path=/; Max-Age=${60 * 60 * 24 * 30}; SameSite=Lax${isHttps ? '; Secure' : ''}`
     );
-    res.status(200).json({ ok: true, userId: user_id });
+    res.status(200).json({ ok: true, userId: body.user_id });
   } catch (err) {
     sendError(res, 500, err?.message || 'Auth request failed');
   }

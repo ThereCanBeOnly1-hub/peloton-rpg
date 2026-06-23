@@ -69,6 +69,22 @@ export function ScheduleProvider({ children }) {
   // once the user logs in (see retryPending / AuthGate). Stored as data (not a
   // closure) to avoid self-referencing the not-yet-declared callbacks.
   const pendingRef = useRef(null);
+  // True while replaying after login. If an AuthError recurs during a replay we
+  // surface an error instead of re-opening the login modal — avoids an infinite
+  // loop when the session is accepted but authed calls still 401.
+  const retryingRef = useRef(false);
+
+  // Shared AuthError handler for plan/reroll. On a fresh failure: stash the
+  // action and prompt login. On a failure during replay: stop and report.
+  const handleAuthError = useCallback((pending) => {
+    if (retryingRef.current) {
+      retryingRef.current = false;
+      setError('Signed in, but Peloton rejected the request. Your session may be invalid — try signing in again.');
+    } else {
+      pendingRef.current = pending;
+      setNeedsAuth(true);
+    }
+  }, []);
 
   // Plan a new week: build the skeleton instantly, then fill it from Peloton.
   const planWeek = useCallback(
@@ -81,16 +97,15 @@ export function ScheduleProvider({ children }) {
       try {
         const filled = await fillSchedule(skeleton, prefs);
         setSchedule(titleize(filled));
+        retryingRef.current = false;
       } catch (err) {
-        if (err instanceof AuthError) {
-          pendingRef.current = { kind: 'plan', args: [prefs] };
-          setNeedsAuth(true);
-        } else setError(err.message || 'Failed to load classes');
+        if (err instanceof AuthError) handleAuthError({ kind: 'plan', args: [prefs] });
+        else setError(err.message || 'Failed to load classes');
       } finally {
         setLoading(false);
       }
     },
-    [titleize]
+    [titleize, handleAuthError]
   );
 
   const updateDayType = useCallback((index, type) => {
@@ -156,22 +171,24 @@ export function ScheduleProvider({ children }) {
               : d
           )
         );
+        retryingRef.current = false;
       } catch (err) {
-        if (err instanceof AuthError) {
-          pendingRef.current = { kind: 'reroll', args: [index, opts] };
-          setNeedsAuth(true);
-        } else setError(err.message || 'Re-roll failed');
+        if (err instanceof AuthError) handleAuthError({ kind: 'reroll', args: [index, opts] });
+        else setError(err.message || 'Re-roll failed');
       }
     },
-    [weekStamp]
+    [weekStamp, handleAuthError]
   );
 
-  // Replay the action that triggered login, after a successful sign-in.
+  // Replay the action that triggered login, after a successful sign-in. Marks
+  // the replay so a recurring AuthError stops instead of re-prompting.
   const retryPending = useCallback(() => {
     const pending = pendingRef.current;
     pendingRef.current = null;
-    if (pending?.kind === 'plan') planWeek(...pending.args);
-    else if (pending?.kind === 'reroll') rerollDay(...pending.args);
+    if (!pending) return;
+    retryingRef.current = true;
+    if (pending.kind === 'plan') planWeek(...pending.args);
+    else if (pending.kind === 'reroll') rerollDay(...pending.args);
   }, [planWeek, rerollDay]);
 
   // Toggle a day done/undone and reconcile XP. XP only ever rises across the

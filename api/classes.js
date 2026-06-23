@@ -74,6 +74,8 @@ export default async function handler(req, res) {
 
     res.status(200).json({ classes });
   } catch (err) {
+    // Diagnostic (no secrets): which discipline failed and Peloton's status.
+    console.log('[classes] discipline=%s pelotonStatus=%s', discipline, err.status);
     // 401 → client should re-auth and retry once (see peloton.js).
     sendError(res, err.status || 500, err.error || 'Failed to fetch classes');
   }
