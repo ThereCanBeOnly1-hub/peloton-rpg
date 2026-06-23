@@ -18,9 +18,20 @@ export default async function handler(req, res) {
     });
 
     if (!loginRes.ok) {
-      // Peloton returns JSON like { message: "Login failed", ... } — surface
-      // just the message so the UI doesn't show a raw JSON blob.
       const text = await loginRes.text().catch(() => '');
+
+      // Cloudflare rate-limit / bot pages come back as HTML, not JSON. Detect
+      // them and return a short, actionable message instead of a wall of HTML.
+      if (/error\s*1015|rate limited|cloudflare/i.test(text) || text.trimStart().startsWith('<')) {
+        return sendError(
+          res,
+          429,
+          'Peloton is temporarily rate-limiting logins (Cloudflare). Wait ~15–30 minutes, then try once more — avoid rapid repeated attempts.'
+        );
+      }
+
+      // Otherwise Peloton returns JSON like { message: "Login failed", ... } —
+      // surface just the message so the UI doesn't show a raw JSON blob.
       let message = text || 'Login failed';
       try {
         message = JSON.parse(text).message || message;

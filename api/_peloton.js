@@ -37,6 +37,10 @@ export async function pelotonFetch(path, { sessionId, method = 'GET', body } = {
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
+    // Cloudflare rate-limit/bot pages are HTML — collapse to a clean message.
+    if (/error\s*1015|rate limited|cloudflare/i.test(text) || text.trimStart().startsWith('<')) {
+      throw { status: 429, error: 'Peloton is temporarily rate-limiting requests (Cloudflare). Wait a few minutes and try again.' };
+    }
     throw { status: res.status, error: text || res.statusText };
   }
 
