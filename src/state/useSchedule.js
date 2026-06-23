@@ -1,7 +1,7 @@
 // Schedule + progression state for the current week. Holds the 7-day schedule,
 // XP/level, and the actions the UI dispatches (plan, edit, reroll, mark done).
 // XP and the active week persist in localStorage; see CLAUDE.md "XP & Leveling".
-import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { buildWeek } from '../engine/balance.js';
 import { fillSchedule, getClasses, AuthError } from '../api/peloton.js';
 import { pickQuestTitle } from '../constants/questTitles.js';
@@ -65,6 +65,11 @@ export function ScheduleProvider({ children }) {
     [weekStamp]
   );
 
+  // Describes the action that hit an AuthError, stashed so it can be replayed
+  // once the user logs in (see retryPending / AuthGate). Stored as data (not a
+  // closure) to avoid self-referencing the not-yet-declared callbacks.
+  const pendingRef = useRef(null);
+
   // Plan a new week: build the skeleton instantly, then fill it from Peloton.
   const planWeek = useCallback(
     async (prefs) => {
@@ -77,8 +82,10 @@ export function ScheduleProvider({ children }) {
         const filled = await fillSchedule(skeleton, prefs);
         setSchedule(titleize(filled));
       } catch (err) {
-        if (err instanceof AuthError) setNeedsAuth(true);
-        else setError(err.message || 'Failed to load classes');
+        if (err instanceof AuthError) {
+          pendingRef.current = { kind: 'plan', args: [prefs] };
+          setNeedsAuth(true);
+        } else setError(err.message || 'Failed to load classes');
       } finally {
         setLoading(false);
       }
@@ -126,7 +133,8 @@ export function ScheduleProvider({ children }) {
 
   // Re-roll one day with scoped filters — fetches a fresh class for that slot.
   const rerollDay = useCallback(
-    async (index, { type, focus, instructorId, maxDuration }) => {
+    async (index, opts) => {
+      const { type, focus, instructorId, maxDuration } = opts;
       setError(null);
       const discipline = type === 'cycle' ? 'cycling' : 'strength';
       try {
@@ -149,12 +157,22 @@ export function ScheduleProvider({ children }) {
           )
         );
       } catch (err) {
-        if (err instanceof AuthError) setNeedsAuth(true);
-        else setError(err.message || 'Re-roll failed');
+        if (err instanceof AuthError) {
+          pendingRef.current = { kind: 'reroll', args: [index, opts] };
+          setNeedsAuth(true);
+        } else setError(err.message || 'Re-roll failed');
       }
     },
     [weekStamp]
   );
+
+  // Replay the action that triggered login, after a successful sign-in.
+  const retryPending = useCallback(() => {
+    const pending = pendingRef.current;
+    pendingRef.current = null;
+    if (pending?.kind === 'plan') planWeek(...pending.args);
+    else if (pending?.kind === 'reroll') rerollDay(...pending.args);
+  }, [planWeek, rerollDay]);
 
   // Toggle a day done/undone and reconcile XP. XP only ever rises across the
   // session except for undoing a same-session completion; it's never reset.
@@ -192,10 +210,16 @@ export function ScheduleProvider({ children }) {
       moveDay,
       rerollDay,
       toggleDone,
+      retryPending,
     }),
-    [schedule, progress, weekStamp, loading, needsAuth, error, planWeek, updateDayType, moveDay, rerollDay, toggleDone]
+    [schedule, progress, weekStamp, loading, needsAuth, error, planWeek, updateDayType, moveDay, rerollDay, toggleDone, retryPending]
   );
 
+  // createElement (not JSX) so this file can keep the .js extension per
+  // CLAUDE.md — esbuild's build step won't parse JSX in .js. The disable below
+  // is a false positive: `value` carries the retryPending function, not the
+  // ref itself, so no ref is read during render.
+  // eslint-disable-next-line react-hooks/refs
   return createElement(ScheduleContext.Provider, { value }, children);
 }
 

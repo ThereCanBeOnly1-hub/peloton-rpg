@@ -4,6 +4,12 @@
 export const BASE_URL = process.env.PELOTON_BASE_URL || 'https://api.onepeloton.com';
 export const SESSION_COOKIE = 'peloton_session_id';
 
+// Peloton's edge blocks unknown clients with a 403 "Endpoint no longer
+// accepting requests". It allowlists the official-app User-Agent prefix
+// "Peloton/1.0" — verified empirically; even "Peloton/9.18 (...)" gets 403.
+// Every server→Peloton request must send this UA.
+export const PELOTON_UA = 'Peloton/1.0 (iPhone; iOS 17.0)';
+
 // Pull the Peloton session id out of the incoming request's Cookie header.
 export function getSessionId(req) {
   const cookie = req.headers.cookie || '';
@@ -16,7 +22,7 @@ export function getSessionId(req) {
 // Returns the parsed JSON body; throws { status, error } on failure.
 export async function pelotonFetch(path, { sessionId, method = 'GET', body } = {}) {
   const url = path.startsWith('http') ? path : `${BASE_URL}${path}`;
-  const headers = { 'Content-Type': 'application/json' };
+  const headers = { 'Content-Type': 'application/json', 'User-Agent': PELOTON_UA };
   if (sessionId) headers.Cookie = `${SESSION_COOKIE}=${sessionId}`;
 
   const doFetch = () =>

@@ -103,11 +103,18 @@ export async function fillSchedule(skeleton, prefs = {}) {
     maxDuration: prefs.maxDuration,
   };
 
-  // Fetch the pools we'll draw from once, then assign locally.
+  // Fetch the pools we'll draw from once, then assign locally. An AuthError
+  // must propagate (so the caller can prompt re-login); only tolerate other
+  // failures (e.g. one discipline returning nothing) by falling back to [].
+  const safe = (args) =>
+    getClasses(args).catch((err) => {
+      if (err instanceof AuthError) throw err;
+      return [];
+    });
   const [strength, cycling, stretching] = await Promise.all([
-    getClasses({ discipline: 'strength', ...filters }).catch(() => []),
-    getClasses({ discipline: 'cycling', ...filters }).catch(() => []),
-    getClasses({ discipline: 'stretching', maxDuration: 15 }).catch(() => []),
+    safe({ discipline: 'strength', ...filters }),
+    safe({ discipline: 'cycling', ...filters }),
+    safe({ discipline: 'stretching', maxDuration: 15 }),
   ]);
 
   const usedMain = new Set();

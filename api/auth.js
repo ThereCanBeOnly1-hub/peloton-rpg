@@ -1,6 +1,6 @@
 // POST /api/auth — exchange Peloton credentials for a session. The session id
 // is stored in an httpOnly cookie set here, so it never reaches client JS.
-import { BASE_URL, SESSION_COOKIE, sendError } from './_peloton.js';
+import { BASE_URL, SESSION_COOKIE, PELOTON_UA, sendError } from './_peloton.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return sendError(res, 405, 'Method not allowed');
@@ -13,13 +13,21 @@ export default async function handler(req, res) {
   try {
     const loginRes = await fetch(`${BASE_URL}/auth/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'User-Agent': PELOTON_UA },
       body: JSON.stringify({ username_or_email, password }),
     });
 
     if (!loginRes.ok) {
+      // Peloton returns JSON like { message: "Login failed", ... } — surface
+      // just the message so the UI doesn't show a raw JSON blob.
       const text = await loginRes.text().catch(() => '');
-      return sendError(res, loginRes.status === 401 ? 401 : 502, text || 'Login failed');
+      let message = text || 'Login failed';
+      try {
+        message = JSON.parse(text).message || message;
+      } catch {
+        /* not JSON — use the raw text */
+      }
+      return sendError(res, loginRes.status === 401 ? 401 : 502, message);
     }
 
     const { session_id, user_id } = await loginRes.json();
