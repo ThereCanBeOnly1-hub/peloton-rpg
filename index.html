@@ -7,14 +7,14 @@
     <meta name="theme-color" content="#16120D" />
     <link rel="manifest" href="/manifest.json" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-    <!-- Themed Google Fonts, loaded non-render-blocking (media swap on load). -->
+    <!-- Themed Google Fonts. preconnect warms the connection; `display=swap`
+         keeps text visible while they load. (A plain stylesheet link — the
+         media=print/onload swap trick breaks vite dev's HTML parser.) -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Uncial+Antiqua&family=Cinzel:wght@500;600;700&family=IM+Fell+English:ital@0;1&display=swap"
-      media="print"
-      onload="this.media='all'"
     />
     <title>Quest Board</title>
   </head>
