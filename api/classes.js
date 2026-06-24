@@ -37,8 +37,6 @@ export default async function handler(req, res) {
     discipline,
     difficulty = 'any', // any | beginner | intermediate | advanced
     maxDuration,
-    limit = '100',
-    page = '0',
   } = req.query;
 
   if (!discipline) return sendError(res, 400, 'Missing discipline');
@@ -46,23 +44,32 @@ export default async function handler(req, res) {
   // The web app browses by `browse_category` (strength|cycling|stretching|…),
   // not `fitness_discipline` — mirror it exactly. Note: Peloton's `duration`
   // param is an EXACT match (class-length bucket), not a max, so we DON'T send
-  // it — we cap length client-side below instead. A generous limit gives the
-  // client room to match focus + favorite instructors.
-  const params = new URLSearchParams({
-    browse_category: discipline,
-    content_format: 'audio,video',
-    limit,
-    page,
-    sort_by: 'original_air_time',
-    desc: 'true',
-  });
+  // it — we cap length client-side below instead.
+  const PAGE_SIZE = 100;
+  const PAGES = 2; // deepen the pool (~200/discipline) so focus+favorite filters have room
+  const pageUrl = (page) =>
+    `/api/v2/ride/archived?${new URLSearchParams({
+      browse_category: discipline,
+      content_format: 'audio,video',
+      limit: String(PAGE_SIZE),
+      page: String(page),
+      sort_by: 'original_air_time',
+      desc: 'true',
+    }).toString()}`;
 
   try {
-    const data = await pelotonFetch(`/api/v2/ride/archived?${params.toString()}`, { token });
+    // Fetch the pages in parallel and merge (dedupe by id).
+    const pages = await Promise.all(
+      Array.from({ length: PAGES }, (_, p) => pelotonFetch(pageUrl(p), { token }))
+    );
     const instructorsById = {};
-    for (const i of data.instructors || []) instructorsById[i.id] = i;
+    const byId = new Map();
+    for (const data of pages) {
+      for (const i of data.instructors || []) instructorsById[i.id] = i;
+      for (const ride of data.data || []) byId.set(ride.id, ride);
+    }
 
-    let classes = (data.data || []).map((ride) => normalize(ride, instructorsById));
+    let classes = [...byId.values()].map((ride) => normalize(ride, instructorsById));
 
     // Cap class length here (max, not exact) so we never zero out a discipline.
     if (maxDuration) {
