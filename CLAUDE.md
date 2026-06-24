@@ -4,6 +4,18 @@ A personal workout planning web app that pulls real classes from a Peloton accou
 
 ---
 
+## Design Philosophy — Low Friction Above All
+
+The user has ADHD; the smallest barrier can derail use. **Every setting is a barrier.** The app must make the decisions *for* the user. Guiding rules:
+
+- **Zero required input on a normal day.** Open app → a balanced week is already there → one tap to start → immediate reward (XP/checkmark).
+- **One-tap primary action: "New Week"** generates a balanced week from saved settings, no filter screen in the way.
+- **Settings are set *once* and forgotten** (favorite instructors, difficulty, preferred week template, max length) — persisted in `localStorage`, applied to every week automatically, never asked at generation time.
+- **Tweaks are escape hatches, not requirements** — per-day Re-roll / Make-it-easier / Skip→Rest let the user redirect a derail into something doable.
+- **Resist adding filters/knobs.** New customization = new management burden = new barrier. When in doubt, leave it out.
+
+---
+
 ## Stack
 
 - **Frontend:** React (Vite)
@@ -30,21 +42,27 @@ A personal workout planning web app that pulls real classes from a Peloton accou
 │   ├── api/
 │   │   └── peloton.js          # Client-side fetch wrapper that calls /api/* endpoints
 │   ├── components/
-│   │   ├── QuestBoard.jsx      # Main board view — the winding path with day tiles
+│   │   ├── QuestBoard.jsx      # Main board view — winding path, "New Week" + Settings
 │   │   ├── DayTile.jsx         # Individual tile (seal/shield shape, icon, status badges)
-│   │   ├── DayModal.jsx        # Tap-a-day popup — class name, instructor, Peloton link
-│   │   ├── PlanModal.jsx       # "Plan the Week" modal — filters + generated schedule
-│   │   ├── ScheduleList.jsx    # Editable Mon–Sun list inside PlanModal
-│   │   ├── RerollModal.jsx     # Per-day re-roll with scoped filters
-│   │   └── PortraitModal.jsx   # Full-size character portrait popup
+│   │   ├── DayModal.jsx        # Tap-a-day popup — class info, Peloton link, escape hatches
+│   │   ├── SettingsModal.jsx   # Set-once preferences (week template, difficulty, instructors)
+│   │   ├── InstructorPicker.jsx# Searchable multi-select for favorite instructors
+│   │   ├── Modal.jsx           # Shared scroll-style modal shell
+│   │   ├── Stepper.jsx         # Shared +/- stepper
+│   │   ├── LoginModal.jsx      # Peloton credentials entry (Auth0 login)
+│   │   ├── PortraitModal.jsx   # Full-size character portrait popup
+│   │   └── icons/              # Custom single-stroke SVG class-type icons
 │   ├── engine/
-│   │   └── balance.js          # Balance engine — takes filters, returns a valid week
+│   │   └── balance.js          # Balance engine — turns the preferred week template into a valid week
 │   ├── state/
-│   │   └── useSchedule.js      # React state/context for the current week's schedule
+│   │   ├── useSchedule.js      # Context: schedule, XP, settings, all actions
+│   │   └── settings.js         # Set-once preferences load/save + defaults
 │   ├── constants/
 │   │   ├── colors.js           # COLORS palette object
 │   │   ├── fonts.js            # Font stack constants
 │   │   ├── questTitles.js      # Rotating flavor-text pools by class type
+│   │   ├── classTypes.js       # TYPE_META / SUB_LABEL / discipline slugs
+│   │   ├── difficulty.js       # Difficulty levels (soft preference)
 │   │   └── tilts.js            # Per-day tile rotation angles
 │   ├── App.jsx
 │   └── main.jsx
@@ -86,27 +104,40 @@ The aesthetic is **medieval dungeon-crawl / D&D**, not modern or clean. Specific
 
 Uses the **unofficial Peloton API** (reverse-engineered, not publicly documented). All calls are proxied through Vercel serverless functions — credentials are never sent to the client.
 
-### Auth
+> ⚠️ **Auth changed in practice.** Peloton migrated the class-library API to
+> **Auth0 Bearer tokens**; the legacy `session_id` cookie no longer authorizes
+> it. Also, `api.onepeloton.com` 403s unknown clients — you must send the
+> official-app User-Agent. The values below reflect what actually works.
+
+### Auth (Auth0)
+
+The class API requires an **Auth0-issued Bearer token**, obtained via the Resource Owner Password grant:
 
 ```
-POST https://api.onepeloton.com/auth/login
-Body: { username_or_email, password }
-Response: { session_id, user_id }
+POST https://auth.onepeloton.com/oauth/token
+Body: {
+  grant_type: "http://auth0.com/oauth/grant-type/password-realm",  // plain "password" is disabled
+  realm: "Username-Password-Authentication",
+  username, password,
+  client_id: "WVoJxVDdPoFx4RNewvvg6ch2mZ7bwnsM",   // public web-app client
+  audience: "https://api.onepeloton.com/",
+  scope: "openid profile email offline_access"
+}
+Response: { access_token, refresh_token, expires_in, ... }
 ```
 
-Store `session_id` in an httpOnly cookie on the Vercel function side. All subsequent API calls include it as `Cookie: peloton_session_id=<session_id>`.
+Store `access_token` + `refresh_token` in httpOnly cookies (`qb_token` / `qb_refresh`). All `api.onepeloton.com` calls send `Authorization: Bearer <access_token>` **plus** these headers: `User-Agent: Peloton/1.0 (iPhone; iOS 17.0)`, `Peloton-Platform: web`, `X-Requested-With: XMLHttpRequest`. (Legacy `/auth/login` cookie auth still works for `/api/me` and `check_session` but NOT the class library.)
 
 ### Fetch Classes
 
 ```
 GET https://api.onepeloton.com/api/v2/ride/archived
 Params:
+  browse_category=cycling | strength | stretching   // NOT fitness_discipline
   content_format=audio,video
-  fitness_discipline=cycling | strength | stretching
   instructor_id=<uuid>           (optional)
-  difficulty=<float>             (optional, 0–10)
   duration=<seconds>             (optional, e.g. 1200 = 20 min)
-  limit=20
+  limit=40
   page=0
   sort_by=original_air_time
   desc=true
@@ -117,7 +148,7 @@ Each class in the response has:
 - `title`
 - `instructor` → `name`
 - `duration` (seconds — divide by 60 for display)
-- `overall_rating_avg` (0–10, this is the difficulty proxy)
+- `difficulty_rating_avg` (0–10 difficulty — clusters high ~7–8, varies by discipline). NOTE: `overall_rating_avg` is a *like-ratio* (~0–1), NOT difficulty.
 - `fitness_discipline_display_name`
 - `image_url`
 
@@ -147,35 +178,36 @@ Returns all instructors with `id` and `name`. Cache this — it rarely changes. 
 
 ## Balance Engine (`src/engine/balance.js`)
 
-Takes user-defined weekly preferences and returns a valid 7-day schedule. This is the core logic — the quest board is just a view on top of it.
+Takes the user's **preferred week template** (a set-once setting) and returns a valid 7-day schedule. This is the core logic — the quest board is just a view on top of it. The engine is pure/API-free (testable on its own); class data is filled in afterward by the API layer.
 
 ### Inputs
 
+The engine reads from the saved settings object (see `src/state/settings.js`):
+
 ```js
 {
-  strengthDays: 2–3,          // how many strength slots to fill
-  cycleCount: 1,              // always 1 for now
-  difficultyMin: 1–10,
-  difficultyMax: 1–10,
-  instructorIds: [],          // empty = any instructor
-  maxDuration: 60,            // minutes
+  weekTemplate: ['strength','rest','cycle','rest','strength','strength','rest'], // Mon–Sun, the source of truth for which days are what
+  difficulty: 'any' | 'beginner' | 'intermediate' | 'advanced',  // soft preference (sort), used at fetch time
+  instructorIds: [],          // favorite instructors (empty = any), used at fetch time
+  maxDuration: 30,            // minutes, used at fetch time
 }
 ```
 
-### Rules (in priority order)
+The user edits `weekTemplate` once in Settings (default: Strength Mon/Fri/Sat, Cycle Wed). The engine respects it as-is — it does **not** redistribute days. (This deliberately allows back-to-back days like Fri+Sat if the user prefers them; the old auto-spacing rule is gone in favor of user control + the low-friction philosophy.)
 
-1. Total active days = `strengthDays + cycleCount`. Remaining days are rest.
-2. **No two hard days back-to-back.** Strength and cycle are both "hard." Rest days must be distributed so there is always at least one rest between any two active days. If this is impossible given the count, relax to allow one pair of back-to-back active days max.
-3. Strength days are distributed across the week (not all clumped at the start or end).
-4. The **last strength day** of the week is automatically flagged as `boss: true`.
-5. Every non-rest day gets a paired stretch class automatically — fetch a stretch class whose body focus matches the strength focus (upper/lower/core/full body) and whose duration is ≤15 min. For cycle days, fetch a "post-ride" or general stretch ≤10 min.
-6. Stretch classes do NOT count as hard days for the back-to-back rule.
+### Rules
+
+1. Day types come straight from `weekTemplate`.
+2. The **last strength day** of the week is flagged `boss: true`.
+3. Strength days get a rotating focus (see below).
+4. Every non-rest day gets a paired stretch (fetched by the API layer): focus-matched ≤15 min for strength, general/post-ride ≤10 min for cycle.
 
 ### Strength Focus Assignment
 
-Rotate through focus areas across strength days to avoid doing the same muscle group twice in a row:
+Rotate through focus areas across strength days to avoid the same muscle group twice in a row:
 - 2 strength days → Upper Body + Lower Body
-- 3 strength days → Upper Body + Lower Body + Core (or Full Body)
+- 3 strength days → Upper Body + Lower Body + Core
+- 4+ → cycle Upper / Lower / Core / Full Body
 
 ### Output
 
@@ -259,8 +291,8 @@ Add a `manifest.json` and register a service worker so the app can be installed 
 ## Auth & Security Notes
 
 - Peloton credentials are entered once in the app, sent to `/api/auth`, and never stored client-side
-- The `session_id` is stored in an httpOnly cookie set by the Vercel function
-- The session lasts roughly 30 days; re-auth silently when a 401 is returned
+- `/api/auth` exchanges them (via Auth0) for an `access_token` + `refresh_token`, stored in httpOnly cookies (`qb_token` / `qb_refresh`) set by the Vercel function
+- The access token lasts ~10h; the refresh token ~30 days. Token refresh via `refresh_token` is **not yet wired** — on expiry (401) the user re-logs in. (TODO: auto-refresh.)
 - This app is personal/private — no multi-user auth needed
 
 ---

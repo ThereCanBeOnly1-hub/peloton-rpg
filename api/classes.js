@@ -34,10 +34,9 @@ export default async function handler(req, res) {
   const {
     discipline,
     instructorId,
-    difficultyMin,
-    difficultyMax,
+    difficulty = 'any', // any | beginner | intermediate | advanced
     maxDuration,
-    limit = '20',
+    limit = '40',
     page = '0',
   } = req.query;
 
@@ -61,19 +60,20 @@ export default async function handler(req, res) {
     const instructorsById = {};
     for (const i of data.instructors || []) instructorsById[i.id] = i;
 
-    let classes = (data.data || []).map((ride) => normalize(ride, instructorsById));
+    const classes = (data.data || []).map((ride) => normalize(ride, instructorsById));
 
-    // Difficulty filtering is done here rather than via API params because the
-    // proxy (overall_rating_avg) isn't a server-side filter on this endpoint.
-    const min = difficultyMin != null ? Number(difficultyMin) : null;
-    const max = difficultyMax != null ? Number(difficultyMax) : null;
-    if (min != null || max != null) {
-      classes = classes.filter((c) => {
-        if (c.difficulty == null) return true; // keep unrated rather than drop
-        if (min != null && c.difficulty < min) return false;
-        if (max != null && c.difficulty > max) return false;
-        return true;
-      });
+    // Difficulty is a SOFT preference, not a hard filter — difficulty_rating_avg
+    // clusters high (~7–8) and varies by discipline, so a hard range returns
+    // nothing. Instead, sort so classes matching the requested level come first;
+    // callers take the top match and we never return an empty list.
+    if (difficulty !== 'any') {
+      const rank = (c) => {
+        const d = c.difficulty ?? 6.5; // assume mid if unrated
+        if (difficulty === 'beginner') return d; // easiest first
+        if (difficulty === 'advanced') return -d; // hardest first
+        return Math.abs(d - 7); // intermediate: closest to ~7
+      };
+      classes.sort((a, b) => rank(a) - rank(b));
     }
 
     res.status(200).json({ classes });

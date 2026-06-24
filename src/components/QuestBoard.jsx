@@ -1,10 +1,10 @@
 // Main board view: the winding path with day tiles, the character header with
 // XP/level, and the entry points to the Plan / Day / Portrait modals.
 import { useState } from 'react';
-import { User, Map } from 'lucide-react';
+import { User, Map, Settings } from 'lucide-react';
 import DayTile from './DayTile.jsx';
 import DayModal from './DayModal.jsx';
-import PlanModal from './PlanModal.jsx';
+import SettingsModal from './SettingsModal.jsx';
 import PortraitModal from './PortraitModal.jsx';
 import { SwordIcon, WheelIcon, TorchIcon, SprigIcon, CrestIcon } from './icons/index.js';
 import { COLORS } from '../constants/colors.js';
@@ -34,9 +34,9 @@ function buildPath(points) {
 }
 
 export default function QuestBoard() {
-  const { schedule, progress, toggleDone } = useSchedule();
-  const [selectedDay, setSelectedDay] = useState(null);
-  const [planOpen, setPlanOpen] = useState(false);
+  const { schedule, progress, loading, planWeek, rerollDay, makeEasier, skipDay, toggleDone } = useSchedule();
+  const [selectedIndex, setSelectedIndex] = useState(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [showPortrait, setShowPortrait] = useState(false);
 
   const pathD = buildPath(POS);
@@ -44,11 +44,9 @@ export default function QuestBoard() {
   const doneActive = activeDays.filter((d) => d.status === 'done').length;
   const xpIntoLevel = progress.totalXp % 100;
 
-  const closeDay = () => setSelectedDay(null);
-  const handleToggleDone = (day) => {
-    toggleDone(schedule.findIndex((d) => d.day === day.day));
-    closeDay();
-  };
+  const selectedDay = selectedIndex != null ? schedule[selectedIndex] : null;
+  const openDay = (i) => setSelectedIndex(i);
+  const closeDay = () => setSelectedIndex(null);
 
   return (
     <div className="w-full flex justify-center px-4 py-8" style={{ background: COLORS.bg, fontFamily: FONT_DISPLAY, minHeight: '100vh', position: 'relative' }}>
@@ -96,14 +94,19 @@ export default function QuestBoard() {
           </div>
         </div>
 
-        <button onClick={() => setPlanOpen(true)} className="w-full flex items-center justify-center gap-2 mb-8" style={{ background: COLORS.stone, color: COLORS.parchment, border: `2px solid ${COLORS.bronze}`, borderRadius: 4, padding: '11px 14px', fontFamily: FONT_HEADING, fontSize: 13, letterSpacing: '0.04em', cursor: 'pointer' }}>
-          <Map size={15} color={COLORS.gold} /> Plan the Week
-        </button>
+        <div className="flex items-center gap-2 mb-8">
+          <button onClick={() => planWeek()} disabled={loading} className="flex-1 flex items-center justify-center gap-2" style={{ background: COLORS.stone, color: COLORS.parchment, border: `2px solid ${COLORS.bronze}`, borderRadius: 4, padding: '11px 14px', fontFamily: FONT_HEADING, fontSize: 13, letterSpacing: '0.04em', cursor: loading ? 'default' : 'pointer', opacity: loading ? 0.7 : 1 }}>
+            <Map size={15} color={COLORS.gold} /> {loading ? 'Consulting the Map…' : 'New Week'}
+          </button>
+          <button onClick={() => setSettingsOpen(true)} aria-label="Settings" style={{ flexShrink: 0, background: COLORS.stone, color: COLORS.parchment, border: `2px solid ${COLORS.bronze}`, borderRadius: 4, padding: '11px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+            <Settings size={16} color={COLORS.gold} />
+          </button>
+        </div>
 
         {/* Board */}
         {schedule.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '60px 20px', color: COLORS.parchmentDim, fontFamily: FONT_HEADING, fontSize: 14, lineHeight: 1.6 }}>
-            No quest awaits. Tap <em>Plan the Week</em> to chart your path.
+            No quest awaits. Tap <em>New Week</em> to chart your path.
           </div>
         ) : (
           <div className="relative" style={{ aspectRatio: '400 / 1000' }}>
@@ -112,7 +115,7 @@ export default function QuestBoard() {
               <path d={pathD} fill="none" stroke={COLORS.bronze} strokeWidth="5" strokeLinecap="round" strokeDasharray="1 16" opacity="0.8" />
             </svg>
             {schedule.map((day, i) => (
-              <DayTile key={day.day} day={day} pos={POS[i]} tilt={TILTS[i]} onOpen={setSelectedDay} />
+              <DayTile key={day.day} day={day} pos={POS[i]} tilt={TILTS[i]} onOpen={() => openDay(i)} />
             ))}
           </div>
         )}
@@ -127,9 +130,19 @@ export default function QuestBoard() {
         </div>
       </div>
 
-      {selectedDay && <DayModal day={selectedDay} onClose={closeDay} onToggleDone={handleToggleDone} />}
+      {selectedDay && (
+        <DayModal
+          day={selectedDay}
+          index={selectedIndex}
+          onClose={closeDay}
+          onToggleDone={toggleDone}
+          onReroll={rerollDay}
+          onMakeEasier={makeEasier}
+          onSkip={skipDay}
+        />
+      )}
       {showPortrait && <PortraitModal onClose={() => setShowPortrait(false)} />}
-      {planOpen && <PlanModal onClose={() => setPlanOpen(false)} />}
+      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }

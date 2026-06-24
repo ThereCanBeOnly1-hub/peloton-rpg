@@ -42,15 +42,12 @@ export async function getInstructors() {
 export async function getClasses({
   discipline,
   instructorId,
-  difficultyMin,
-  difficultyMax,
+  difficulty, // any | beginner | intermediate | advanced
   maxDuration,
-  limit = 20,
 } = {}) {
-  const params = new URLSearchParams({ discipline, limit: String(limit) });
+  const params = new URLSearchParams({ discipline });
   if (instructorId) params.set('instructorId', instructorId);
-  if (difficultyMin != null) params.set('difficultyMin', String(difficultyMin));
-  if (difficultyMax != null) params.set('difficultyMax', String(difficultyMax));
+  if (difficulty && difficulty !== 'any') params.set('difficulty', difficulty);
   if (maxDuration != null) params.set('maxDuration', String(maxDuration));
   const { classes } = await call(`/api/classes?${params.toString()}`);
   return classes;
@@ -95,12 +92,11 @@ function classForDay(classes, used) {
 // Orchestrate a full week: take the engine's skeleton and fill each active day
 // with a real class + paired stretch. Returns a new schedule array; days that
 // can't be filled keep their null class fields so the UI can show a fallback.
-export async function fillSchedule(skeleton, prefs = {}) {
+export async function fillSchedule(skeleton, settings = {}) {
   const filters = {
-    instructorId: prefs.instructorIds?.[0],
-    difficultyMin: prefs.difficultyMin,
-    difficultyMax: prefs.difficultyMax,
-    maxDuration: prefs.maxDuration,
+    instructorId: settings.instructorIds?.[0],
+    difficulty: settings.difficulty,
+    maxDuration: settings.maxDuration,
   };
 
   // Fetch the pools we'll draw from once, then assign locally. An AuthError

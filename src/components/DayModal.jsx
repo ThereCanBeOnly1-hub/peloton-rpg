@@ -1,16 +1,23 @@
-// Tap-a-day popup: quest title, the real class + instructor, and a deep link
-// out to Peloton. Rest days show flavor text instead.
-import { ExternalLink, Check } from 'lucide-react';
+// Tap-a-day popup: quest title, the real class + instructor, a deep link out to
+// Peloton, and the per-day escape hatches (re-roll / make it easier / skip) for
+// when life gets in the way. Rest days show flavor text + an "add a quest" out.
+import { ExternalLink, Check, RefreshCw, Feather, Moon } from 'lucide-react';
 import Modal from './Modal.jsx';
 import { COLORS } from '../constants/colors.js';
 import { FONT_HEADING, FONT_MONO } from '../constants/fonts.js';
 import { SUB_LABEL, DISCIPLINE } from '../constants/classTypes.js';
 import { classLink } from '../api/peloton.js';
 
-export default function DayModal({ day, onClose, onToggleDone }) {
+export default function DayModal({ day, index, onClose, onToggleDone, onReroll, onMakeEasier, onSkip }) {
   const isRest = day.type === 'rest';
   const isDone = day.status === 'done';
   const paired = !isRest && day.stretchName;
+
+  const ghostBtn = {
+    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+    border: `1px solid ${COLORS.bronze}`, background: 'transparent', color: COLORS.bronze,
+    padding: '8px 6px', borderRadius: 4, cursor: 'pointer', fontFamily: FONT_MONO, fontSize: 11,
+  };
 
   return (
     <Modal title={day.day} onClose={onClose}>
@@ -30,7 +37,7 @@ export default function DayModal({ day, onClose, onToggleDone }) {
             </>
           ) : (
             <div style={{ fontSize: 14, lineHeight: 1.5, marginBottom: 14, fontStyle: 'italic', color: COLORS.bronze }}>
-              No class assigned yet — plan the week or re-roll this day.
+              No class assigned — re-roll to find one.
             </div>
           )}
 
@@ -52,14 +59,29 @@ export default function DayModal({ day, onClose, onToggleDone }) {
           )}
 
           <button
-            onClick={() => onToggleDone(day)}
+            onClick={() => onToggleDone(index)}
             style={{ width: '100%', marginTop: 10, background: isDone ? 'transparent' : COLORS.moss, color: isDone ? COLORS.bronze : COLORS.parchment, border: `1px solid ${isDone ? COLORS.bronze : 'transparent'}`, padding: 10, borderRadius: 4, fontFamily: FONT_HEADING, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
           >
             <Check size={14} /> {isDone ? 'Mark Not Done' : 'Mark Complete'}
           </button>
+
+          {/* Escape hatches */}
+          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+            <button style={ghostBtn} onClick={() => onReroll(index)} title="Different class"><RefreshCw size={12} /> Re-roll</button>
+            <button style={ghostBtn} onClick={() => onMakeEasier(index)} title="Shorter / easier"><Feather size={12} /> Easier</button>
+            <button style={ghostBtn} onClick={() => onSkip(index)} title="Make it a rest day"><Moon size={12} /> Skip</button>
+          </div>
         </>
       ) : (
-        <div style={{ fontSize: 15, lineHeight: 1.5 }}>A day to recover. No quest awaits &mdash; rest your blade.</div>
+        <>
+          <div style={{ fontSize: 15, lineHeight: 1.5, marginBottom: 14 }}>A day to recover. No quest awaits &mdash; rest your blade.</div>
+          <button
+            onClick={() => onReroll(index)}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, border: `1px solid ${COLORS.bronze}`, background: 'transparent', color: COLORS.bronze, padding: 9, borderRadius: 4, cursor: 'pointer', fontFamily: FONT_MONO, fontSize: 12 }}
+          >
+            <RefreshCw size={12} /> Add a quest instead
+          </button>
+        </>
       )}
     </Modal>
   );

@@ -1,10 +1,12 @@
-// Schedule + progression state for the current week. Holds the 7-day schedule,
-// XP/level, and the actions the UI dispatches (plan, edit, reroll, mark done).
-// XP and the active week persist in localStorage; see CLAUDE.md "XP & Leveling".
+// Schedule + progression + settings state. Holds the 7-day schedule, XP/level,
+// and the set-once preferences. The everyday flow needs zero input: planWeek()
+// reads the saved settings; per-day escape hatches (reroll/easier/skip) let you
+// adjust when life gets in the way. All of it persists in localStorage.
 import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { buildWeek } from '../engine/balance.js';
 import { fillSchedule, getClasses, AuthError } from '../api/peloton.js';
 import { pickQuestTitle } from '../constants/questTitles.js';
+import { loadSettings, saveSettings } from './settings.js';
 
 const XP_KEY = 'questboard.progress';
 const WEEK_KEY = 'questboard.week';
@@ -12,7 +14,7 @@ const XP_PER_LEVEL = 100;
 const WEEKLY_BONUS = 25;
 
 // Monotonic week number (weeks since the Unix epoch's Monday). Used to stamp
-// quest titles for the "no repeats in 4 weeks" rule and to label the board.
+// quest titles for the "no repeats in 4 weeks" rule.
 function currentWeekStamp(now = new Date()) {
   return Math.floor((now.getTime() - now.getTimezoneOffset() * 60000) / (7 * 24 * 60 * 60 * 1000));
 }
@@ -52,12 +54,23 @@ export function ScheduleProvider({ children }) {
   const [progress, setProgress] = useState(() =>
     loadJSON(XP_KEY, { totalXp: 0, level: 1, weeklyLog: [] })
   );
+  const [settings, setSettings] = useState(loadSettings);
   const [loading, setLoading] = useState(false);
   const [needsAuth, setNeedsAuth] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => saveJSON(WEEK_KEY, schedule), [schedule]);
   useEffect(() => saveJSON(XP_KEY, progress), [progress]);
+  useEffect(() => saveSettings(settings), [settings]);
+
+  // Refs so async callbacks always read the latest schedule/settings without
+  // being re-created on every change.
+  const scheduleRef = useRef(schedule);
+  const settingsRef = useRef(settings);
+  useEffect(() => { scheduleRef.current = schedule; }, [schedule]);
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
+
+  const updateSettings = useCallback((patch) => setSettings((s) => ({ ...s, ...patch })), []);
 
   // Attach a fresh quest title (per type, avoiding recent repeats) to each day.
   const titleize = useCallback(
@@ -65,17 +78,12 @@ export function ScheduleProvider({ children }) {
     [weekStamp]
   );
 
-  // Describes the action that hit an AuthError, stashed so it can be replayed
-  // once the user logs in (see retryPending / AuthGate). Stored as data (not a
-  // closure) to avoid self-referencing the not-yet-declared callbacks.
+  // The action that hit an AuthError, stashed so it can be replayed after login.
   const pendingRef = useRef(null);
-  // True while replaying after login. If an AuthError recurs during a replay we
-  // surface an error instead of re-opening the login modal — avoids an infinite
-  // loop when the session is accepted but authed calls still 401.
+  // True while replaying after login — a recurring AuthError then surfaces an
+  // error instead of re-opening the login modal (avoids an infinite loop).
   const retryingRef = useRef(false);
 
-  // Shared AuthError handler for plan/reroll. On a fresh failure: stash the
-  // action and prompt login. On a failure during replay: stop and report.
   const handleAuthError = useCallback((pending) => {
     if (retryingRef.current) {
       retryingRef.current = false;
@@ -86,108 +94,91 @@ export function ScheduleProvider({ children }) {
     }
   }, []);
 
-  // Plan a new week: build the skeleton instantly, then fill it from Peloton.
-  const planWeek = useCallback(
-    async (prefs) => {
-      setError(null);
-      setNeedsAuth(false);
-      const skeleton = titleize(buildWeek(prefs));
-      setSchedule(skeleton); // show the shape right away
-      setLoading(true);
-      try {
-        const filled = await fillSchedule(skeleton, prefs);
-        setSchedule(titleize(filled));
-        retryingRef.current = false;
-      } catch (err) {
-        if (err instanceof AuthError) handleAuthError({ kind: 'plan', args: [prefs] });
-        else setError(err.message || 'Failed to load classes');
-      } finally {
-        setLoading(false);
-      }
-    },
-    [titleize, handleAuthError]
-  );
+  // Generate a fresh week from the saved settings (the one-tap primary action).
+  const planWeek = useCallback(async () => {
+    setError(null);
+    setNeedsAuth(false);
+    const s = settingsRef.current;
+    const skeleton = titleize(buildWeek(s));
+    setSchedule(skeleton); // show the shape right away
+    setLoading(true);
+    try {
+      const filled = await fillSchedule(skeleton, s);
+      setSchedule(titleize(filled));
+      retryingRef.current = false;
+    } catch (err) {
+      if (err instanceof AuthError) handleAuthError({ kind: 'plan', args: [] });
+      else setError(err.message || 'Failed to load classes');
+    } finally {
+      setLoading(false);
+    }
+  }, [titleize, handleAuthError]);
 
-  const updateDayType = useCallback((index, type) => {
+  // Fetch a fresh class for one day. `overrides` can narrow the search
+  // (e.g. easier difficulty / shorter); defaults come from the day + settings.
+  const rerollDay = useCallback(async (index, overrides = {}) => {
+    setError(null);
+    const day = scheduleRef.current[index];
+    if (!day) return;
+    const s = settingsRef.current;
+    const type = overrides.type || (day.type === 'rest' ? 'strength' : day.type);
+    const focus = overrides.focus ?? day.focus ?? 'Full Body';
+    const discipline = type === 'cycle' ? 'cycling' : 'strength';
+    const difficulty = overrides.difficulty ?? s.difficulty;
+    const maxDuration = overrides.maxDuration ?? s.maxDuration;
+    const instructorId = overrides.instructorId ?? s.instructorIds?.[0];
+    try {
+      const classes = await getClasses({ discipline, instructorId, difficulty, maxDuration });
+      // Prefer a class different from the current one.
+      const main = classes.find((c) => c.id !== day.classId) || classes[0] || null;
+      setSchedule((prev) =>
+        prev.map((d, i) =>
+          i === index
+            ? {
+                ...d,
+                type,
+                focus: type === 'strength' ? focus : null,
+                classId: main?.id ?? null,
+                name: main?.title ?? null,
+                instructor: main?.instructor ?? null,
+                duration: main?.duration ?? null,
+                questTitle: type === d.type ? d.questTitle : pickQuestTitle(type, weekStamp),
+              }
+            : d
+        )
+      );
+      retryingRef.current = false;
+    } catch (err) {
+      if (err instanceof AuthError) handleAuthError({ kind: 'reroll', args: [index, overrides] });
+      else setError(err.message || 'Re-roll failed');
+    }
+  }, [weekStamp, handleAuthError]);
+
+  // Escape hatch: swap this day's class for an easier/shorter one.
+  const makeEasier = useCallback((index) => {
+    const day = scheduleRef.current[index];
+    const shorter = Math.max(5, (day?.duration || settingsRef.current.maxDuration) - 10);
+    return rerollDay(index, { difficulty: 'beginner', maxDuration: shorter });
+  }, [rerollDay]);
+
+  // Escape hatch: turn this day into a guilt-free rest day.
+  const skipDay = useCallback((index) => {
     setSchedule((prev) =>
       prev.map((d, i) =>
         i === index
-          ? { ...d, type, focus: type === 'strength' ? d.focus || 'Full Body' : null, questTitle: pickQuestTitle(type, weekStamp) }
+          ? { ...d, type: 'rest', focus: null, boss: false, classId: null, name: null, instructor: null, duration: null, stretchClassId: null, stretchName: null, stretchDuration: null, questTitle: pickQuestTitle('rest', weekStamp) }
           : d
       )
     );
   }, [weekStamp]);
 
-  const moveDay = useCallback((index, dir) => {
-    setSchedule((prev) => {
-      const j = index + dir;
-      if (j < 0 || j >= prev.length) return prev;
-      // Swap the activity between the two slots, but keep each slot's weekday
-      // label and status (done/today/upcoming) fixed to its calendar position.
-      const next = [...prev];
-      const swap = (target, source) => ({
-        day: target.day,
-        status: target.status,
-        type: source.type,
-        focus: source.focus,
-        boss: source.boss,
-        questTitle: source.questTitle,
-        classId: source.classId,
-        name: source.name,
-        instructor: source.instructor,
-        duration: source.duration,
-        stretchClassId: source.stretchClassId,
-        stretchName: source.stretchName,
-        stretchDuration: source.stretchDuration,
-      });
-      next[index] = swap(prev[index], prev[j]);
-      next[j] = swap(prev[j], prev[index]);
-      return next;
-    });
-  }, []);
-
-  // Re-roll one day with scoped filters — fetches a fresh class for that slot.
-  const rerollDay = useCallback(
-    async (index, opts) => {
-      const { type, focus, instructorId, maxDuration } = opts;
-      setError(null);
-      const discipline = type === 'cycle' ? 'cycling' : 'strength';
-      try {
-        const classes = await getClasses({ discipline, instructorId, maxDuration });
-        const main = classes[0] || null;
-        setSchedule((prev) =>
-          prev.map((d, i) =>
-            i === index
-              ? {
-                  ...d,
-                  type,
-                  focus: type === 'strength' ? focus : null,
-                  classId: main?.id ?? null,
-                  name: main?.title ?? null,
-                  instructor: main?.instructor ?? null,
-                  duration: main?.duration ?? null,
-                  questTitle: pickQuestTitle(type, weekStamp),
-                }
-              : d
-          )
-        );
-        retryingRef.current = false;
-      } catch (err) {
-        if (err instanceof AuthError) handleAuthError({ kind: 'reroll', args: [index, opts] });
-        else setError(err.message || 'Re-roll failed');
-      }
-    },
-    [weekStamp, handleAuthError]
-  );
-
-  // Replay the action that triggered login, after a successful sign-in. Marks
-  // the replay so a recurring AuthError stops instead of re-prompting.
+  // Replay the action that triggered login, after a successful sign-in.
   const retryPending = useCallback(() => {
     const pending = pendingRef.current;
     pendingRef.current = null;
     if (!pending) return;
     retryingRef.current = true;
-    if (pending.kind === 'plan') planWeek(...pending.args);
+    if (pending.kind === 'plan') planWeek();
     else if (pending.kind === 'reroll') rerollDay(...pending.args);
   }, [planWeek, rerollDay]);
 
@@ -217,25 +208,26 @@ export function ScheduleProvider({ children }) {
     () => ({
       schedule,
       progress,
+      settings,
       weekStamp,
       loading,
       needsAuth,
       error,
       setNeedsAuth,
+      updateSettings,
       planWeek,
-      updateDayType,
-      moveDay,
       rerollDay,
+      makeEasier,
+      skipDay,
       toggleDone,
       retryPending,
     }),
-    [schedule, progress, weekStamp, loading, needsAuth, error, planWeek, updateDayType, moveDay, rerollDay, toggleDone, retryPending]
+    [schedule, progress, settings, weekStamp, loading, needsAuth, error, updateSettings, planWeek, rerollDay, makeEasier, skipDay, toggleDone, retryPending]
   );
 
-  // createElement (not JSX) so this file can keep the .js extension per
-  // CLAUDE.md — esbuild's build step won't parse JSX in .js. The disable below
-  // is a false positive: `value` carries the retryPending function, not the
-  // ref itself, so no ref is read during render.
+  // createElement (not JSX) so this file can keep the .js extension per CLAUDE.md
+  // — esbuild's build step won't parse JSX in .js. The disable is a false
+  // positive: `value` carries functions, not the refs themselves.
   // eslint-disable-next-line react-hooks/refs
   return createElement(ScheduleContext.Provider, { value }, children);
 }
