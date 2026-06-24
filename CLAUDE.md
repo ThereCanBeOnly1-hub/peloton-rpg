@@ -83,16 +83,24 @@ The aesthetic is **medieval dungeon-crawl / D&D**, not modern or clean. Specific
 - **Accent:** gold (`#D9A441`) for XP bar, today highlight, boss crown, done checkmarks
 - **Moss green** (`#4F6B4A`) for the stretch badge and secondary actions
 
-**Tile shapes** use SVG `clipPath` — an irregular blob for normal days (`sealBlob`), a heraldic shield for the boss day. Do NOT use `border-radius` circles or rounded rectangles for tiles.
+**The board is an aged-parchment D&D battle map**: parchment fill with a faint
+square grid (`<pattern>`), a double-bronze frame, a hand-inked wandering dashed
+route between markers, a compass rose, and light terrain marginalia (hills,
+pines). It is NOT a clean "level path" — that read as a modern trail map.
 
-**Each tile is slightly rotated** (see `TILTS` array in `constants/tilts.js`) to look hand-stamped. The icon inside counter-rotates to stay upright.
+**Day markers are circular wax seals** — crimson for strength, bronze for cycle,
+a dark stone disc with a campfire for rest. The **boss is a castle keep**
+(`CastleIcon`), not a seal. Each marker is slightly rotated (`TILTS`) to look
+hand-stamped; the icon counter-rotates upright. Completed markers get a gold
+wax "stamp" (check); today gets a gold glow.
 
-**Icons** are custom single-stroke SVG components defined in `src/components/icons/`:
-- `SwordIcon` — strength days
-- `WheelIcon` — cycle days (a wagon wheel, not a bicycle)
-- `TorchIcon` — rest days
-- `SprigIcon` — stretch badge (appears as a small badge on paired days, not a full tile)
-- `CrestIcon` — boss crown marker above the boss tile
+**Loot drops** when a day is completed (see "Loot" below) — a trophy SVG appears
+next to that seal and fills the map as the week progresses.
+
+**Icons** are custom SVG components in `src/components/icons/`:
+- `SwordIcon` — strength · `WheelIcon` — cycle (a wagon wheel, not a bicycle)
+- `CampfireIcon` — rest days · `SprigIcon` — stretch badge on paired days
+- `CastleIcon` — the boss keep · `LootIcon` — renders a loot trophy by id
 
 **Fonts** must be loaded from Google Fonts. Uncial Antiqua is display-only (week title). Cinzel is for all headings and button labels. IM Fell English for body/modal text. Never use a sans-serif for themed UI text.
 
@@ -264,6 +272,25 @@ export const QUEST_TITLES = {
 - **Level thresholds:** Start simple — every 100 XP = 1 level. Adjust later once real usage data exists.
 - **Weekly bonus:** If all non-rest days in a week are marked done, award 25 bonus XP.
 - **No reset on missed days** — XP only ever goes up. A skipped week just means no weekly bonus.
+
+---
+
+## Loot (the primary reward beat)
+
+Completing a day drops a **loot trophy** on the map next to that day's seal — the
+core dopamine moment and what fills the otherwise-empty board as the week
+progresses. Pure fluff: no inventory, no management, no choices.
+
+- **Pools by quest type** (`src/constants/loot.js`): strength → weapons/armor,
+  cycle → coin/potion/scroll, boss → chest/crown. `pickLoot()` prefers an item
+  not already on the board that week, so a week doesn't fill with duplicates.
+- **Lifecycle:** dropped on "Mark Done" (stored as `day.loot`), removed on
+  "Mark Not Done", and **wiped on New Week** (blank battlefield → re-loot). The
+  weekly reset is deliberate — it keeps the reward fresh instead of running out
+  of upgrade visuals like a finite rank ladder would.
+- **Trophies** render via `LootIcon` and pop in with a small animation.
+- **Deferred:** a heavier completion ceremony (XP count-up, victory-flavor
+  ribbon, boss/weekly payoff) is planned on top of the loot drop.
 
 ---
 
