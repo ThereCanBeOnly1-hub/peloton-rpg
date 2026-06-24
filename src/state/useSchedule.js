@@ -149,12 +149,12 @@ export function ScheduleProvider({ children }) {
     }
   }, [weekStamp, handleAuthError]);
 
-  // Escape hatch: swap this day's class for an easier/shorter one.
-  const makeEasier = useCallback((index) => {
-    const day = scheduleRef.current[index];
-    const shorter = Math.max(5, (day?.duration || settingsRef.current.maxDuration) - 10);
-    return rerollDay(index, { difficulty: 'beginner', maxDuration: shorter });
-  }, [rerollDay]);
+  // Escape hatch: swap this day's class for an easier one (same focus, so the
+  // stretch still pairs). preferEasier biases selection toward the easier half.
+  const makeEasier = useCallback(
+    (index) => rerollDay(index, { difficulty: 'beginner', preferEasier: true }),
+    [rerollDay]
+  );
 
   // Escape hatch: turn this day into a guilt-free rest day.
   const skipDay = useCallback((index) => {

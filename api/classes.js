@@ -37,7 +37,7 @@ export default async function handler(req, res) {
     discipline,
     difficulty = 'any', // any | beginner | intermediate | advanced
     maxDuration,
-    limit = '60',
+    limit = '100',
     page = '0',
   } = req.query;
 

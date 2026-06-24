@@ -69,25 +69,44 @@ function matchesFocus(title, focus) {
   return kws.some((k) => t.includes(k));
 }
 
-// Pick a main class from a pool, preferring (in order): the day's focus, the
-// user's favorite instructors, and a class not already used this week. Soft at
-// every step — never returns null when the pool is non-empty.
-function pickMain(pool, { focus, favorites = [], used = new Set(), excludeId } = {}) {
+const rand = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+// Pick a main class from a pool using priority tiers (best first):
+//   1. favorite instructor AND matching focus
+//   2. matching focus (any instructor) — keeps the muscle-group rotation
+//   3. favorite instructor (any focus)
+//   4. anything
+// Within the best non-empty tier, prefer classes not used yet this week, then
+// pick RANDOMLY for variety (so re-roll cycles through the whole set, not 2).
+function pickMain(pool, { focus, favorites = [], used = new Set(), excludeId, preferEasier } = {}) {
   if (!pool.length) return null;
   const favSet = new Set(favorites);
-  const score = (c) => {
-    let s = 0;
-    if (!matchesFocus(c.title, focus)) s += 4; // focus is the priority
-    if (favSet.size && !favSet.has(c.instructorId)) s += 2; // then favorites
-    if (used.has(c.id)) s += 1; // then freshness
-    if (c.id === excludeId) s += 8; // strongly avoid the current class on reroll
-    return s;
-  };
-  return [...pool].sort((a, b) => score(a) - score(b))[0];
+  const candidates = pool.filter((c) => c.id !== excludeId);
+  const base = candidates.length ? candidates : pool;
+  const focusMatch = (c) => matchesFocus(c.title, focus);
+  const isFav = (c) => favSet.size === 0 || favSet.has(c.instructorId);
+
+  const tiers = [
+    base.filter((c) => isFav(c) && focusMatch(c)),
+    base.filter((c) => focusMatch(c)),
+    base.filter((c) => isFav(c)),
+    base,
+  ];
+  const tier = tiers.find((t) => t.length) || base;
+  const fresh = tier.filter((c) => !used.has(c.id));
+  let choices = fresh.length ? fresh : tier;
+
+  if (preferEasier) {
+    // Bias toward the easier half so "Make it easier" actually does.
+    const sorted = [...choices].sort((a, b) => (a.difficulty ?? 6.5) - (b.difficulty ?? 6.5));
+    choices = sorted.slice(0, Math.max(1, Math.ceil(sorted.length / 2)));
+  }
+  return rand(choices);
 }
 
 // Pick a stretch to pair with a day. Cycle → a post-ride/cool-down ≤10 min;
 // strength → a focus-matched stretch ≤15 min, never a ride or warm-up class.
+// Random within the matching set so re-roll varies the stretch too.
 function pickStretch(pool, { type, focus, used = new Set() } = {}) {
   const maxLen = type === 'cycle' ? 10 : 15;
   let eligible = pool.filter((c) => c.duration <= maxLen && !used.has(c.id));
@@ -98,21 +117,18 @@ function pickStretch(pool, { type, focus, used = new Set() } = {}) {
   const isWarmup = (t) => /warm[\s-]?up|pre[\s-]?ride/i.test(t);
 
   if (type === 'cycle') {
-    return (
-      eligible.find((c) => /post[\s-]?ride|cool[\s-]?down/i.test(c.title)) ||
-      eligible.find((c) => !isWarmup(c.title)) ||
-      eligible[0]
-    );
+    const post = eligible.filter((c) => /post[\s-]?ride|cool[\s-]?down/i.test(c.title));
+    if (post.length) return rand(post);
+    const nonWarm = eligible.filter((c) => !isWarmup(c.title));
+    return rand(nonWarm.length ? nonWarm : eligible);
   }
-  // Strength: prefer a focus-matched, non-ride, non-warm-up stretch.
+  // Strength: focus-matched, non-ride, non-warm-up.
   const clean = eligible.filter((c) => !isRide(c.title) && !isWarmup(c.title));
-  const base = clean.length ? clean : eligible;
-  return (
-    base.find((c) => matchesFocus(c.title, focus)) ||
-    base.find((c) => /full body|total body/i.test(c.title)) ||
-    base.find((c) => /stretch/i.test(c.title)) ||
-    base[0]
-  );
+  const baseE = clean.length ? clean : eligible;
+  const focusM = baseE.filter((c) => matchesFocus(c.title, focus));
+  if (focusM.length) return rand(focusM);
+  const general = baseE.filter((c) => /full body|total body|stretch/i.test(c.title));
+  return rand(general.length ? general : baseE);
 }
 
 // Fetch the three discipline pools once (AuthError propagates so the caller can
@@ -181,7 +197,7 @@ export async function rollDay(day, settings = {}, overrides = {}) {
     getClasses({ discipline: 'stretching' }),
   ]);
 
-  const main = pickMain(pool, { focus, favorites, excludeId: day.classId });
+  const main = pickMain(pool, { focus, favorites, excludeId: day.classId, preferEasier: overrides.preferEasier });
   const stretch = pickStretch(stretching, { type, focus });
   return { type, focus, main, stretch };
 }
