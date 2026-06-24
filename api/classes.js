@@ -2,7 +2,7 @@
 // the fields the app actually uses. Query params mirror the engine's filters:
 //   discipline=cycling|strength|stretching  (required)
 //   instructorId, difficultyMin, difficultyMax, maxDuration (minutes), limit
-import { getSessionId, pelotonFetch, sendError } from './_peloton.js';
+import { getToken, pelotonFetch, sendError } from './_peloton.js';
 
 // Reduce a raw Peloton ride into the shape the client/engine consume. The API
 // nests instructor data either inline or in a sibling lookup map, so handle both.
@@ -17,7 +17,9 @@ function normalize(ride, instructorsById = {}) {
     instructor: instructorName,
     instructorId: ride.instructor_id || ride.instructor?.id || null,
     duration: Math.round((ride.duration || 0) / 60), // seconds → minutes
-    difficulty: ride.overall_rating_avg ?? null, // 0–10 difficulty proxy
+    // 0–10 difficulty. overall_rating_avg is a like-ratio (~0–1), NOT difficulty
+    // — use the real difficulty fields, leaving null if absent (kept by filter).
+    difficulty: ride.difficulty_rating_avg ?? ride.difficulty_estimate ?? null,
     discipline: ride.fitness_discipline_display_name || ride.fitness_discipline,
     imageUrl: ride.image_url || null,
   };
@@ -26,8 +28,8 @@ function normalize(ride, instructorsById = {}) {
 export default async function handler(req, res) {
   if (req.method !== 'GET') return sendError(res, 405, 'Method not allowed');
 
-  const sessionId = getSessionId(req);
-  if (!sessionId) return sendError(res, 401, 'No session — re-authenticate');
+  const token = getToken(req);
+  if (!token) return sendError(res, 401, 'No session — re-authenticate');
 
   const {
     discipline,
@@ -41,9 +43,11 @@ export default async function handler(req, res) {
 
   if (!discipline) return sendError(res, 400, 'Missing discipline');
 
+  // The web app browses by `browse_category` (strength|cycling|stretching|…),
+  // not `fitness_discipline` — mirror it exactly.
   const params = new URLSearchParams({
+    browse_category: discipline,
     content_format: 'audio,video',
-    fitness_discipline: discipline,
     limit,
     page,
     sort_by: 'original_air_time',
@@ -53,7 +57,7 @@ export default async function handler(req, res) {
   if (maxDuration) params.set('duration', String(Number(maxDuration) * 60));
 
   try {
-    const data = await pelotonFetch(`/api/v2/ride/archived?${params.toString()}`, { sessionId });
+    const data = await pelotonFetch(`/api/v2/ride/archived?${params.toString()}`, { token });
     const instructorsById = {};
     for (const i of data.instructors || []) instructorsById[i.id] = i;
 
@@ -74,9 +78,7 @@ export default async function handler(req, res) {
 
     res.status(200).json({ classes });
   } catch (err) {
-    // Diagnostic (no secrets): which discipline failed and Peloton's status.
-    console.log('[classes] discipline=%s pelotonStatus=%s', discipline, err.status);
-    // 401 → client should re-auth and retry once (see peloton.js).
+    // 401 → token expired/invalid; client re-authenticates (see peloton.js).
     sendError(res, err.status || 500, err.error || 'Failed to fetch classes');
   }
 }

@@ -1,6 +1,8 @@
-// POST /api/auth — exchange Peloton credentials for a session. The session id
-// is stored in an httpOnly cookie set here, so it never reaches client JS.
-import { BASE_URL, SESSION_COOKIE, PELOTON_UA, sendError } from './_peloton.js';
+// POST /api/auth — exchange Peloton credentials for an Auth0 Bearer token via
+// the Resource Owner Password grant, and store the tokens in httpOnly cookies.
+// The class-library API requires this token; the legacy session cookie no
+// longer authorizes it.
+import { auth0Login, tokenCookies, sendError } from './_peloton.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return sendError(res, 405, 'Method not allowed');
@@ -11,69 +13,11 @@ export default async function handler(req, res) {
   }
 
   try {
-    const loginRes = await fetch(`${BASE_URL}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'User-Agent': PELOTON_UA },
-      body: JSON.stringify({ username_or_email, password }),
-    });
-
-    if (!loginRes.ok) {
-      const text = await loginRes.text().catch(() => '');
-
-      // Cloudflare rate-limit / bot pages come back as HTML, not JSON. Detect
-      // them and return a short, actionable message instead of a wall of HTML.
-      if (/error\s*1015|rate limited|cloudflare/i.test(text) || text.trimStart().startsWith('<')) {
-        return sendError(
-          res,
-          429,
-          'Peloton is temporarily rate-limiting logins (Cloudflare). Wait ~15–30 minutes, then try once more — avoid rapid repeated attempts.'
-        );
-      }
-
-      // Otherwise Peloton returns JSON like { message: "Login failed", ... } —
-      // surface just the message so the UI doesn't show a raw JSON blob.
-      let message = text || 'Login failed';
-      try {
-        message = JSON.parse(text).message || message;
-      } catch {
-        /* not JSON — use the raw text */
-      }
-      return sendError(res, loginRes.status === 401 ? 401 : 502, message);
-    }
-
-    const body = await loginRes.json().catch(() => ({}));
-
-    // The session id may arrive in the JSON body (session_id) or only via
-    // Peloton's own Set-Cookie header — capture whichever is present. Without a
-    // session, "login" would succeed with a junk cookie and every authed call
-    // (e.g. classes) would 401 in a loop, so fail loudly instead.
-    let sessionId = body.session_id;
-    if (!sessionId) {
-      const setCookies = loginRes.headers.getSetCookie?.() ||
-        [loginRes.headers.get('set-cookie')].filter(Boolean);
-      for (const c of setCookies) {
-        const m = c?.match(new RegExp(`${SESSION_COOKIE}=([^;]+)`));
-        if (m) { sessionId = m[1]; break; }
-      }
-    }
-    // Diagnostic (no secrets): shows where the session came from if logins
-    // misbehave. Safe to remove once auth is confirmed stable.
-    console.log('[auth] ok=%s bodyKeys=%j sessionResolved=%s', loginRes.ok, Object.keys(body), !!sessionId);
-
-    if (!sessionId) return sendError(res, 502, 'Login succeeded but no session was returned');
-
-    // Only mark Secure over real HTTPS; on `vercel dev` (http://localhost)
-    // a Secure cookie can be dropped, which would silently break the session.
-    const isHttps = (req.headers['x-forwarded-proto'] || '').includes('https');
-
-    // ~30-day session. httpOnly so client JS can't read it; SameSite=Lax is
-    // fine since the SPA and the API share an origin on Vercel.
-    res.setHeader(
-      'Set-Cookie',
-      `${SESSION_COOKIE}=${sessionId}; HttpOnly; Path=/; Max-Age=${60 * 60 * 24 * 30}; SameSite=Lax${isHttps ? '; Secure' : ''}`
-    );
-    res.status(200).json({ ok: true, userId: body.user_id });
+    const tokens = await auth0Login(username_or_email, password);
+    res.setHeader('Set-Cookie', tokenCookies(tokens, req));
+    res.status(200).json({ ok: true });
   } catch (err) {
-    sendError(res, 500, err?.message || 'Auth request failed');
+    // 401 → bad credentials (invalid_grant); otherwise upstream/Auth0 issue.
+    sendError(res, err.status || 500, err.message || 'Auth request failed');
   }
 }
