@@ -38,6 +38,7 @@ function emptyClassFields() {
     stretchClassId: null,
     stretchName: null,
     stretchDuration: null,
+    loot: null, // loot id dropped when the day is completed (wiped each week)
   };
 }
 

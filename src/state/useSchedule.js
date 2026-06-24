@@ -6,6 +6,7 @@ import { createContext, createElement, useCallback, useContext, useEffect, useMe
 import { buildWeek } from '../engine/balance.js';
 import { fillSchedule, rollDay, AuthError } from '../api/peloton.js';
 import { pickQuestTitle } from '../constants/questTitles.js';
+import { pickLoot } from '../constants/loot.js';
 import { loadSettings, saveSettings } from './settings.js';
 
 const XP_KEY = 'questboard.progress';
@@ -161,7 +162,7 @@ export function ScheduleProvider({ children }) {
     setSchedule((prev) =>
       prev.map((d, i) =>
         i === index
-          ? { ...d, type: 'rest', focus: null, boss: false, classId: null, name: null, instructor: null, duration: null, stretchClassId: null, stretchName: null, stretchDuration: null, questTitle: pickQuestTitle('rest', weekStamp) }
+          ? { ...d, type: 'rest', focus: null, boss: false, classId: null, name: null, instructor: null, duration: null, stretchClassId: null, stretchName: null, stretchDuration: null, loot: null, questTitle: pickQuestTitle('rest', weekStamp) }
           : d
       )
     );
@@ -184,7 +185,13 @@ export function ScheduleProvider({ children }) {
       const day = prev[index];
       if (!day || day.type === 'rest') return prev;
       const nowDone = day.status !== 'done';
-      const next = prev.map((d, i) => (i === index ? { ...d, status: nowDone ? 'done' : 'upcoming' } : d));
+      // Drop loot on completion (a treasure for the map); clear it on undo.
+      // Prefer an item not already on the board this week.
+      const usedLoot = prev.map((d) => d.loot).filter(Boolean);
+      const loot = nowDone ? pickLoot(day.boss ? 'boss' : day.type, usedLoot) : null;
+      const next = prev.map((d, i) =>
+        i === index ? { ...d, status: nowDone ? 'done' : 'upcoming', loot } : d
+      );
 
       const delta = dayMinutes(day) * (nowDone ? 1 : -1);
       const allActiveDone = next.filter((d) => d.type !== 'rest').every((d) => d.status === 'done');

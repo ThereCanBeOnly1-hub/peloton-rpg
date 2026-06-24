@@ -6,7 +6,7 @@ import DayTile from './DayTile.jsx';
 import DayModal from './DayModal.jsx';
 import SettingsModal from './SettingsModal.jsx';
 import PortraitModal from './PortraitModal.jsx';
-import { SwordIcon, WheelIcon, TorchIcon, SprigIcon, CrestIcon } from './icons/index.js';
+import { SwordIcon, WheelIcon, CampfireIcon, SprigIcon, CastleIcon } from './icons/index.js';
 import { COLORS } from '../constants/colors.js';
 import { FONT_DISPLAY, FONT_HEADING, FONT_MONO } from '../constants/fonts.js';
 import { TILTS } from '../constants/tilts.js';
@@ -51,24 +51,18 @@ export default function QuestBoard() {
   return (
     <div className="w-full flex justify-center px-4 py-8" style={{ background: COLORS.bg, fontFamily: FONT_DISPLAY, minHeight: '100vh', position: 'relative' }}>
       <style>{`
-        @keyframes bob { 0%,100%{transform:translateX(-50%) translateY(0);}50%{transform:translateX(-50%) translateY(-6px);} }
-        @keyframes pulseGlow { 0%,100%{filter:drop-shadow(0 0 0px rgba(217,164,65,0));}50%{filter:drop-shadow(0 0 10px rgba(217,164,65,0.6));} }
-        @media(prefers-reduced-motion:reduce){.bob,.pulseGlow{animation:none!important;}}
-        .day-tile:focus-visible{filter:drop-shadow(0 0 6px rgba(217,164,65,0.7));}
+        @keyframes qbTodayPulse { 0%,100%{box-shadow:0 0 0 2px #D9A441, 0 0 8px 2px rgba(217,164,65,.25);}50%{box-shadow:0 0 0 2px #D9A441, 0 0 16px 5px rgba(217,164,65,.55);} }
+        @keyframes qbLootPop { 0%{transform:translateY(-14px) scale(.2) rotate(-18deg);opacity:0;}70%{transform:translateY(0) scale(1.2) rotate(6deg);opacity:1;}100%{transform:scale(1) rotate(0);opacity:1;} }
+        @keyframes qbStamp { 0%{transform:translate(-50%,-50%) scale(2.4) rotate(-20deg);opacity:0;}70%{transform:translate(-50%,-50%) scale(.9) rotate(6deg);opacity:1;}100%{transform:translate(-50%,-50%) scale(1) rotate(0);opacity:1;} }
+        .qb-today{animation:qbTodayPulse 1.9s ease-in-out infinite;}
+        .qb-loot{animation:qbLootPop .56s cubic-bezier(.2,1.4,.4,1) both;}
+        .qb-stamp{animation:qbStamp .5s cubic-bezier(.2,1.3,.4,1) both;}
+        @media(prefers-reduced-motion:reduce){.qb-today,.qb-loot,.qb-stamp{animation:none!important;}}
       `}</style>
 
-      {/* Cheap pre-baked paper grain, fixed behind all content (z-index 0).
-          Replaces a live full-area feTurbulence filter, which blacked out
-          content via mix-blend and hung the rasterizer. */}
+      {/* Cheap pre-baked paper grain on the dark dungeon backdrop. */}
       <div style={{ position: 'fixed', inset: 0, backgroundImage: GRAIN, opacity: 0.05, pointerEvents: 'none', zIndex: 0 }} />
 
-      {/* Off-screen SVG defs: the two tile clip shapes used by DayTile. */}
-      <svg style={{ position: 'absolute', width: 0, height: 0 }}>
-        <defs>
-          <clipPath id="sealBlob" clipPathUnits="objectBoundingBox"><path d="M0.50,0.05 C0.70,0.05 0.90,0.20 0.92,0.45 C0.94,0.68 0.78,0.90 0.52,0.93 C0.28,0.96 0.08,0.78 0.06,0.52 C0.04,0.28 0.22,0.08 0.50,0.05 Z" /></clipPath>
-          <clipPath id="shieldBlob" clipPathUnits="objectBoundingBox"><path d="M0.50,0.02 L0.92,0.12 C0.94,0.40 0.90,0.62 0.74,0.80 C0.64,0.90 0.56,0.96 0.50,0.99 C0.44,0.96 0.36,0.90 0.26,0.80 C0.10,0.62 0.06,0.40 0.08,0.12 Z" /></clipPath>
-        </defs>
-      </svg>
       <div className="w-full" style={{ maxWidth: 420, position: 'relative', zIndex: 1 }}>
         {/* Header: portrait + level, week title, XP bar */}
         <div className="flex items-start gap-4 mb-5">
@@ -113,10 +107,32 @@ export default function QuestBoard() {
             No quest awaits. Tap <em>New Week</em> to chart your path.
           </div>
         ) : (
-          <div className="relative" style={{ aspectRatio: '400 / 1000' }}>
+          <div className="relative" style={{ aspectRatio: '400 / 1000', background: COLORS.parchment, border: `3px double ${COLORS.bronze}`, outline: `1px solid ${COLORS.iron}`, borderRadius: 6, overflow: 'hidden' }}>
             <svg viewBox="0 0 400 1000" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" style={{ position: 'absolute', inset: 0 }}>
-              <path d={pathD} fill="none" stroke="rgba(0,0,0,0.35)" strokeWidth="9" strokeLinecap="round" transform="translate(0,3)" />
-              <path d={pathD} fill="none" stroke={COLORS.bronze} strokeWidth="5" strokeLinecap="round" strokeDasharray="1 16" opacity="0.8" />
+              <defs>
+                <pattern id="qbgrid" width="40" height="40" patternUnits="userSpaceOnUse">
+                  <path d="M40 0 H0 V40" fill="none" stroke={COLORS.bronze} strokeWidth="0.8" opacity="0.22" />
+                </pattern>
+              </defs>
+              <rect width="400" height="1000" fill="url(#qbgrid)" />
+              <rect x="6" y="6" width="388" height="988" fill="none" stroke={COLORS.bronze} strokeWidth="1.5" opacity="0.5" />
+              {/* Inked wandering route between the quest markers */}
+              <path d={pathD} fill="none" stroke="#4a3520" strokeWidth="3" strokeLinecap="round" strokeDasharray="1.5 13" opacity="0.8" />
+              {/* Light terrain marginalia */}
+              <g stroke="#5b7a55" fill="#5b7a55" opacity="0.7">
+                <path d="M330,300 l6,-18 l6,18 z" /><rect x="333" y="300" width="5" height="8" />
+                <path d="M60,560 l6,-18 l6,18 z" /><rect x="63" y="560" width="5" height="8" />
+                <path d="M320,720 l6,-18 l6,18 z" /><rect x="323" y="720" width="5" height="8" />
+              </g>
+              <g stroke={COLORS.bronze} fill="none" strokeWidth="1.5" opacity="0.5" strokeLinecap="round">
+                <path d="M55,250 q18,-24 36,0" /><path d="M78,250 q13,-17 26,0" />
+                <path d="M300,840 q18,-24 36,0" />
+              </g>
+              {/* Compass rose */}
+              <g transform="translate(350,70)" stroke={COLORS.bronze} fill={COLORS.bronze} opacity="0.6">
+                <circle r="16" fill="none" strokeWidth="1.2" />
+                <path d="M0,-16 L3.4,0 L0,16 L-3.4,0 Z M-16,0 L0,3.4 L16,0 L0,-3.4 Z" />
+              </g>
             </svg>
             {schedule.map((day, i) => (
               <DayTile key={day.day} day={day} pos={POS[i]} tilt={TILTS[i]} onOpen={() => openDay(i)} />
@@ -129,8 +145,8 @@ export default function QuestBoard() {
           <div className="flex items-center gap-1"><SwordIcon size={13} color={COLORS.parchmentDim} /> Strength</div>
           <div className="flex items-center gap-1"><WheelIcon size={13} color={COLORS.parchmentDim} /> Cycle</div>
           <div className="flex items-center gap-1"><SprigIcon size={13} color={COLORS.parchmentDim} /> Stretch</div>
-          <div className="flex items-center gap-1"><TorchIcon size={13} color={COLORS.parchmentDim} /> Rest</div>
-          <div className="flex items-center gap-1"><CrestIcon size={13} color={COLORS.gold} /> Boss</div>
+          <div className="flex items-center gap-1"><CampfireIcon size={14} /> Rest</div>
+          <div className="flex items-center gap-1"><CastleIcon size={18} /> Boss</div>
         </div>
       </div>
 

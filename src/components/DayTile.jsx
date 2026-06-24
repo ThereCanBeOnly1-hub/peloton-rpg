@@ -1,82 +1,78 @@
-// A single day tile on the winding path: seal-blob for normal days, heraldic
-// shield for the boss. Slightly rotated to look hand-stamped; the icon
-// counter-rotates to stay upright. Badges: stretch sprig, done check, today
-// footsteps, boss crown.
-import { Check, Footprints } from 'lucide-react';
-import { SwordIcon, WheelIcon, TorchIcon, SprigIcon, CrestIcon } from './icons/index.js';
+// A single quest marker on the battle map: a wax seal (crimson strength, bronze
+// cycle), a campfire for rest, or the castle keep for the boss. Slightly tilted
+// to look hand-stamped. Shows a done stamp, today glow, stretch badge, and any
+// loot dropped when the day was cleared.
+import { Check } from 'lucide-react';
+import { SwordIcon, WheelIcon, CampfireIcon, SprigIcon, CastleIcon, LootIcon } from './icons/index.js';
 import { COLORS } from '../constants/colors.js';
-import { FONT_HEADING, FONT_MONO } from '../constants/fonts.js';
+import { FONT_HEADING } from '../constants/fonts.js';
 
-const ICONS = { strength: SwordIcon, cycle: WheelIcon, rest: TorchIcon };
+const ICONS = { strength: SwordIcon, cycle: WheelIcon };
 
 export default function DayTile({ day, pos, tilt, onOpen }) {
   const isRest = day.type === 'rest';
   const isBoss = !!day.boss;
   const isToday = day.status === 'today';
   const isDone = day.status === 'done';
-  const paired = day.type !== 'rest';
-  const Icon = ICONS[day.type];
-
-  const baseSize = isBoss ? 88 : isRest ? 54 : 68;
-  const tileBg = isBoss ? COLORS.crimson : isRest ? COLORS.stone : COLORS.parchment;
-  const iconColor = isBoss ? COLORS.parchment : isRest ? COLORS.moss : COLORS.ink;
-  const clip = isBoss ? 'url(#shieldBlob)' : 'url(#sealBlob)';
+  const paired = !isRest;
 
   const left = `${(pos.x / 400) * 100}%`;
   const top = `${(pos.y / 1000) * 100}%`;
 
+  // Seal styling per type.
+  const size = isRest ? 46 : 56;
+  const sealBg = day.type === 'strength' ? COLORS.crimson : day.type === 'cycle' ? COLORS.bronze : COLORS.iron;
+  const Icon = ICONS[day.type];
+
   const open = () => onOpen(day);
+  const labelColor = isBoss ? COLORS.crimson : COLORS.ink;
+
+  const stamp = isDone && (
+    <span className="qb-stamp" style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', width: 30, height: 30, borderRadius: '50%', background: COLORS.gold, border: '2px solid #b9892f', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3a2a08', zIndex: 3 }}>
+      <Check size={18} />
+    </span>
+  );
+
+  const loot = day.loot && (
+    <div className="qb-loot" style={{ position: 'absolute', right: -20, bottom: -10, zIndex: 4, filter: 'drop-shadow(0 1px 1px rgba(0,0,0,.35))' }}>
+      <LootIcon id={day.loot} size={isBoss ? 30 : 26} />
+    </div>
+  );
 
   return (
-    <div style={{ position: 'absolute', left, top, transform: 'translate(-50%,-50%)', width: 100, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      <div style={{ position: 'relative', width: baseSize, height: baseSize }}>
-        {isToday && (
-          <div className="bob" style={{ position: 'absolute', left: '50%', top: -26, transform: 'translateX(-50%)', animation: 'bob 1.6s ease-in-out infinite' }}>
-            <Footprints size={20} color={COLORS.gold} />
-          </div>
-        )}
-        {isBoss && (
-          <div style={{ position: 'absolute', top: -26, left: '50%', transform: 'translateX(-50%)' }}>
-            <CrestIcon size={20} color={COLORS.gold} />
-          </div>
-        )}
-
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={open}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } }}
-          className={`day-tile${isBoss ? ' pulseGlow' : ''}`}
-          style={{
-            width: baseSize, height: baseSize, clipPath: clip, background: tileBg,
-            border: `3px solid ${isToday ? COLORS.gold : COLORS.iron}`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-            outline: 'none', transform: `rotate(${tilt}deg)`,
-            filter: isToday ? 'drop-shadow(0 0 6px rgba(217,164,65,0.55))' : 'none',
-            animation: isBoss ? 'pulseGlow 2.4s ease-in-out infinite' : 'none',
-            opacity: day.status === 'upcoming' ? 0.88 : 1,
-          }}
-        >
-          <div style={{ transform: `rotate(${-tilt}deg)` }}>
-            <Icon size={isBoss ? 30 : isRest ? 21 : 25} color={iconColor} />
-          </div>
-        </div>
-
-        {paired && (
-          <div style={{ position: 'absolute', bottom: -2, right: -2, width: 22, height: 22, borderRadius: '50%', background: COLORS.moss, border: `2px solid ${COLORS.bg}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <SprigIcon size={12} color={COLORS.parchment} />
-          </div>
-        )}
-        {isDone && (
-          <div style={{ position: 'absolute', top: -4, left: -4, width: 22, height: 22, borderRadius: '50%', background: COLORS.gold, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `2px solid ${COLORS.bg}` }}>
-            <Check size={12} color={COLORS.ink} />
-          </div>
+    <div style={{ position: 'absolute', left, top, transform: 'translate(-50%,-50%)', width: 108, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <div style={{ position: 'relative' }}>
+        {isBoss ? (
+          <button onClick={open} aria-label={`${day.day} boss`} style={{ position: 'relative', background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'block' }}>
+            <CastleIcon size={68} />
+            {stamp}
+            {loot}
+          </button>
+        ) : (
+          <button
+            onClick={open}
+            aria-label={day.day}
+            className={isToday ? 'qb-today' : undefined}
+            style={{ position: 'relative', width: size, height: size, borderRadius: '50%', background: sealBg, border: `3px solid ${isToday ? COLORS.gold : COLORS.bronze}`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transform: `rotate(${tilt}deg)`, padding: 0 }}
+          >
+            <span style={{ transform: `rotate(${-tilt}deg)`, display: 'flex' }}>
+              {isRest ? <CampfireIcon size={24} /> : <Icon size={24} color={COLORS.parchment} />}
+            </span>
+            {paired && (
+              <span style={{ position: 'absolute', bottom: -4, right: -4, width: 20, height: 20, borderRadius: '50%', background: COLORS.moss, border: `2px solid ${COLORS.parchment}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <SprigIcon size={11} color={COLORS.parchment} />
+              </span>
+            )}
+            {stamp}
+            {loot}
+          </button>
         )}
       </div>
-
-      <div style={{ textAlign: 'center', marginTop: 9 }}>
-        <div style={{ fontFamily: FONT_MONO, color: COLORS.parchmentDim, fontSize: 10, letterSpacing: '0.1em' }}>{day.day}</div>
-        <div style={{ fontFamily: FONT_HEADING, color: COLORS.parchment, fontSize: isBoss ? 13.5 : 12, fontWeight: 600, lineHeight: 1.25, marginTop: 2 }}>
+      <div style={{ textAlign: 'center', marginTop: 6 }}>
+        <div style={{ fontFamily: FONT_HEADING, color: '#5b4327', fontSize: 11, letterSpacing: '0.08em' }}>
+          {day.day}{isBoss ? ' · BOSS' : isToday ? ' · TODAY' : ''}
+        </div>
+        <div style={{ fontFamily: FONT_HEADING, color: labelColor, fontSize: 11, fontWeight: 600, lineHeight: 1.25, marginTop: 1 }}>
           {day.questTitle}
         </div>
       </div>
