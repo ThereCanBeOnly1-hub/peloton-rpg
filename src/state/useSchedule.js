@@ -150,9 +150,9 @@ export function ScheduleProvider({ children }) {
   }, [weekStamp, handleAuthError]);
 
   // Escape hatch: swap this day's class for an easier one (same focus, so the
-  // stretch still pairs). preferEasier biases selection toward the easier half.
+  // stretch still pairs). 'beginner' biases selection toward the easier half.
   const makeEasier = useCallback(
-    (index) => rerollDay(index, { difficulty: 'beginner', preferEasier: true }),
+    (index) => rerollDay(index, { difficulty: 'beginner' }),
     [rerollDay]
   );
 

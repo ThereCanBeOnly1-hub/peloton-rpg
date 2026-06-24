@@ -1,9 +1,8 @@
 // GET /api/classes — fetch the Peloton class library for a discipline,
 // normalized to the fields the app uses. Returns a POOL; the client picks the
-// right class per day (focus rotation + favorite instructors across all
-// favorites + stretch pairing), so this endpoint stays simple.
-//   discipline=cycling|strength|stretching  (required)
-//   difficulty=any|beginner|intermediate|advanced, maxDuration (minutes), limit
+// right class per day (focus rotation + favorite instructors + difficulty +
+// stretch pairing), so this endpoint just fetches and caps length.
+//   discipline=cycling|strength|stretching  (required), maxDuration (minutes)
 import { getToken, pelotonFetch, sendError } from './_peloton.js';
 
 // Reduce a raw Peloton ride into the shape the client/engine consume. The API
@@ -33,11 +32,7 @@ export default async function handler(req, res) {
   const token = getToken(req);
   if (!token) return sendError(res, 401, 'No session — re-authenticate');
 
-  const {
-    discipline,
-    difficulty = 'any', // any | beginner | intermediate | advanced
-    maxDuration,
-  } = req.query;
+  const { discipline, maxDuration } = req.query;
 
   if (!discipline) return sendError(res, 400, 'Missing discipline');
 
@@ -76,20 +71,6 @@ export default async function handler(req, res) {
       const cap = Number(maxDuration);
       const within = classes.filter((c) => c.duration <= cap);
       if (within.length) classes = within; // keep all if nothing fits, rather than empty
-    }
-
-    // Difficulty is a SOFT preference, not a hard filter — difficulty_rating_avg
-    // clusters high (~7–8) and varies by discipline, so a hard range returns
-    // nothing. Instead, sort so classes matching the requested level come first;
-    // callers take the top match and we never return an empty list.
-    if (difficulty !== 'any') {
-      const rank = (c) => {
-        const d = c.difficulty ?? 6.5; // assume mid if unrated
-        if (difficulty === 'beginner') return d; // easiest first
-        if (difficulty === 'advanced') return -d; // hardest first
-        return Math.abs(d - 7); // intermediate: closest to ~7
-      };
-      classes.sort((a, b) => rank(a) - rank(b));
     }
 
     res.status(200).json({ classes });

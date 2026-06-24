@@ -4,8 +4,8 @@
 // can be tested on its own. See CLAUDE.md "Balance Engine".
 
 export const WEEKDAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-export const STRENGTH_FOCUS = ['Upper Body', 'Lower Body', 'Core', 'Full Body'];
-export const DAY_TYPES = ['strength', 'cycle', 'rest'];
+const STRENGTH_FOCUS = ['Upper Body', 'Lower Body', 'Core', 'Full Body'];
+const DAY_TYPES = ['strength', 'cycle', 'rest'];
 
 // The default preferred week (Mon–Sun): Strength Mon/Fri/Sat, Cycle Wed, rest
 // otherwise. Users override this once in Settings; it then applies every week.

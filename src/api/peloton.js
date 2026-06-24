@@ -38,11 +38,10 @@ export async function getInstructors() {
   return instructors;
 }
 
-// Fetch a discipline's class pool. Instructor/focus selection happens client-
-// side (see pickMain) so we can honor *all* favorites, not just one.
-export async function getClasses({ discipline, difficulty, maxDuration } = {}) {
+// Fetch a discipline's class pool. Focus / favorite-instructor / difficulty
+// selection all happen client-side (see pickMain) so the pool stays broad.
+async function getClasses({ discipline, maxDuration } = {}) {
   const params = new URLSearchParams({ discipline });
-  if (difficulty && difficulty !== 'any') params.set('difficulty', difficulty);
   if (maxDuration != null) params.set('maxDuration', String(maxDuration));
   const { classes } = await call(`/api/classes?${params.toString()}`);
   return classes;
@@ -71,14 +70,28 @@ function matchesFocus(title, focus) {
 
 const rand = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
+// Narrow a candidate set toward a difficulty level (soft — keeps variety, never
+// empties). difficulty_rating_avg is 0–10; 'any' applies no bias.
+function biasByDifficulty(choices, difficulty) {
+  if (!difficulty || difficulty === 'any' || choices.length <= 2) return choices;
+  const sorted = [...choices].sort((a, b) => (a.difficulty ?? 6.5) - (b.difficulty ?? 6.5));
+  const half = Math.ceil(sorted.length / 2);
+  if (difficulty === 'beginner') return sorted.slice(0, half);
+  if (difficulty === 'advanced') return sorted.slice(-half);
+  // intermediate: the middle of the range
+  const lo = Math.floor(sorted.length * 0.25);
+  return sorted.slice(lo, lo + half);
+}
+
 // Pick a main class from a pool using priority tiers (best first):
 //   1. favorite instructor AND matching focus
 //   2. matching focus (any instructor) — keeps the muscle-group rotation
 //   3. favorite instructor (any focus)
 //   4. anything
-// Within the best non-empty tier, prefer classes not used yet this week, then
-// pick RANDOMLY for variety (so re-roll cycles through the whole set, not 2).
-function pickMain(pool, { focus, favorites = [], used = new Set(), excludeId, preferEasier } = {}) {
+// Within the best non-empty tier, prefer classes not used yet this week, bias
+// toward the requested difficulty, then pick RANDOMLY for variety (so re-roll
+// cycles through the whole set, not just two).
+function pickMain(pool, { focus, favorites = [], used = new Set(), excludeId, difficulty } = {}) {
   if (!pool.length) return null;
   const favSet = new Set(favorites);
   const candidates = pool.filter((c) => c.id !== excludeId);
@@ -94,13 +107,7 @@ function pickMain(pool, { focus, favorites = [], used = new Set(), excludeId, pr
   ];
   const tier = tiers.find((t) => t.length) || base;
   const fresh = tier.filter((c) => !used.has(c.id));
-  let choices = fresh.length ? fresh : tier;
-
-  if (preferEasier) {
-    // Bias toward the easier half so "Make it easier" actually does.
-    const sorted = [...choices].sort((a, b) => (a.difficulty ?? 6.5) - (b.difficulty ?? 6.5));
-    choices = sorted.slice(0, Math.max(1, Math.ceil(sorted.length / 2)));
-  }
+  const choices = biasByDifficulty(fresh.length ? fresh : tier, difficulty);
   return rand(choices);
 }
 
@@ -133,16 +140,15 @@ function pickStretch(pool, { type, focus, used = new Set() } = {}) {
 
 // Fetch the three discipline pools once (AuthError propagates so the caller can
 // prompt re-login; other failures fall back to []).
-async function fetchPools(settings) {
-  const { difficulty, maxDuration } = settings;
+async function fetchPools({ maxDuration }) {
   const safe = (args) =>
     getClasses(args).catch((err) => {
       if (err instanceof AuthError) throw err;
       return [];
     });
   const [strength, cycling, stretching] = await Promise.all([
-    safe({ discipline: 'strength', difficulty, maxDuration }),
-    safe({ discipline: 'cycling', difficulty, maxDuration }),
+    safe({ discipline: 'strength', maxDuration }),
+    safe({ discipline: 'cycling', maxDuration }),
     safe({ discipline: 'stretching' }),
   ]);
   return { strength, cycling, stretching };
@@ -173,7 +179,7 @@ export async function fillSchedule(skeleton, settings = {}) {
   return skeleton.map((day) => {
     if (day.type === 'rest') return day;
     const pool = day.type === 'cycle' ? cycling : strength;
-    const main = pickMain(pool, { focus: day.focus, favorites, used: usedMain });
+    const main = pickMain(pool, { focus: day.focus, favorites, used: usedMain, difficulty: settings.difficulty });
     if (main) usedMain.add(main.id);
     const stretch = pickStretch(stretching, { type: day.type, focus: day.focus, used: usedStretch });
     if (stretch) usedStretch.add(stretch.id);
@@ -193,11 +199,11 @@ export async function rollDay(day, settings = {}, overrides = {}) {
   const discipline = type === 'cycle' ? 'cycling' : 'strength';
 
   const [pool, stretching] = await Promise.all([
-    getClasses({ discipline, difficulty, maxDuration }),
+    getClasses({ discipline, maxDuration }),
     getClasses({ discipline: 'stretching' }),
   ]);
 
-  const main = pickMain(pool, { focus, favorites, excludeId: day.classId, preferEasier: overrides.preferEasier });
+  const main = pickMain(pool, { focus, favorites, excludeId: day.classId, difficulty });
   const stretch = pickStretch(stretching, { type, focus });
   return { type, focus, main, stretch };
 }
