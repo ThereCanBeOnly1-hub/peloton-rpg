@@ -1,7 +1,8 @@
 // A single quest marker on the battle map: a wax seal (crimson strength, bronze
 // cycle), a campfire for rest, or the castle keep for the boss. Slightly tilted
 // to look hand-stamped. Shows a done stamp, today glow, stretch badge, and any
-// loot dropped when the day was cleared.
+// loot dropped when the day was cleared — loot lands big in the open space on
+// whichever side of the marker is empty.
 import { Check } from 'lucide-react';
 import { SwordIcon, WheelIcon, CampfireIcon, SprigIcon, CastleIcon, LootIcon } from './icons/index.js';
 import { COLORS } from '../constants/colors.js';
@@ -19,10 +20,14 @@ export default function DayTile({ day, pos, tilt, onOpen }) {
   const left = `${(pos.x / 400) * 100}%`;
   const top = `${(pos.y / 1000) * 100}%`;
 
-  // Seal styling per type.
   const size = isRest ? 46 : 56;
   const sealBg = day.type === 'strength' ? COLORS.crimson : day.type === 'cycle' ? COLORS.bronze : COLORS.iron;
   const Icon = ICONS[day.type];
+
+  // Loot drops into the empty side: left-column markers spill right, right
+  // column spills left. Big — roughly the size of a marker — to fill the map.
+  const lootRight = pos.x < 200;
+  const lootSize = isBoss ? 92 : 78;
 
   const open = () => onOpen(day);
   const labelColor = isBoss ? COLORS.crimson : COLORS.ink;
@@ -33,20 +38,13 @@ export default function DayTile({ day, pos, tilt, onOpen }) {
     </span>
   );
 
-  const loot = day.loot && (
-    <div className="qb-loot" style={{ position: 'absolute', right: -20, bottom: -10, zIndex: 4, filter: 'drop-shadow(0 1px 1px rgba(0,0,0,.35))' }}>
-      <LootIcon id={day.loot} size={isBoss ? 30 : 26} />
-    </div>
-  );
-
   return (
-    <div style={{ position: 'absolute', left, top, transform: 'translate(-50%,-50%)', width: 108, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+    <div style={{ position: 'absolute', left, top, transform: 'translate(-50%,-50%)', width: 120, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
       <div style={{ position: 'relative' }}>
         {isBoss ? (
           <button onClick={open} aria-label={`${day.day} boss`} style={{ position: 'relative', background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'block' }}>
             <CastleIcon size={68} />
             {stamp}
-            {loot}
           </button>
         ) : (
           <button
@@ -64,16 +62,26 @@ export default function DayTile({ day, pos, tilt, onOpen }) {
               </span>
             )}
             {stamp}
-            {loot}
           </button>
         )}
+
+        {day.loot && (
+          <div style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', [lootRight ? 'left' : 'right']: '100%', [lootRight ? 'marginLeft' : 'marginRight']: 22, zIndex: 4, pointerEvents: 'none' }}>
+            <div className="qb-loot" style={{ filter: 'drop-shadow(0 2px 2px rgba(0,0,0,.4))' }}>
+              <LootIcon id={day.loot} size={lootSize} />
+            </div>
+          </div>
+        )}
       </div>
-      <div style={{ textAlign: 'center', marginTop: 6 }}>
-        <div style={{ fontFamily: FONT_HEADING, color: '#5b4327', fontSize: 11, letterSpacing: '0.08em' }}>
-          {day.day}{isBoss ? ' · BOSS' : isToday ? ' · TODAY' : ''}
-        </div>
-        <div style={{ fontFamily: FONT_HEADING, color: labelColor, fontSize: 11, fontWeight: 600, lineHeight: 1.25, marginTop: 1 }}>
-          {day.questTitle}
+
+      <div style={{ textAlign: 'center', marginTop: 7 }}>
+        <div style={{ display: 'inline-block', background: 'rgba(214,193,140,0.85)', border: '1px solid rgba(107,79,46,0.35)', borderRadius: 4, padding: '1px 7px' }}>
+          <div style={{ fontFamily: FONT_HEADING, color: '#5b4327', fontSize: 11, letterSpacing: '0.08em' }}>
+            {day.day}{isBoss ? ' · BOSS' : isToday ? ' · TODAY' : ''}
+          </div>
+          <div style={{ fontFamily: FONT_HEADING, color: labelColor, fontSize: 11, fontWeight: 600, lineHeight: 1.25 }}>
+            {day.questTitle}
+          </div>
         </div>
       </div>
     </div>

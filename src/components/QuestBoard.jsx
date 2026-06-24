@@ -48,6 +48,14 @@ export default function QuestBoard() {
   const openDay = (i) => setSelectedIndex(i);
   const closeDay = () => setSelectedIndex(null);
 
+  // Marking a day done closes the modal so the seal stamp + loot drop are visible
+  // on the board. (Undo keeps the modal open.)
+  const handleToggleDone = (i) => {
+    const wasDone = schedule[i]?.status === 'done';
+    toggleDone(i);
+    if (!wasDone) closeDay();
+  };
+
   return (
     <div className="w-full flex justify-center px-4 py-8" style={{ background: COLORS.bg, fontFamily: FONT_DISPLAY, minHeight: '100vh', position: 'relative' }}>
       <style>{`
@@ -155,7 +163,7 @@ export default function QuestBoard() {
           day={selectedDay}
           index={selectedIndex}
           onClose={closeDay}
-          onToggleDone={toggleDone}
+          onToggleDone={handleToggleDone}
           onReroll={rerollDay}
           onMakeEasier={makeEasier}
           onSkip={skipDay}
