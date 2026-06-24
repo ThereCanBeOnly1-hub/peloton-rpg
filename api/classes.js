@@ -43,24 +43,40 @@ export default async function handler(req, res) {
   if (!discipline) return sendError(res, 400, 'Missing discipline');
 
   // The web app browses by `browse_category` (strength|cycling|stretching|…),
-  // not `fitness_discipline` — mirror it exactly.
-  const params = new URLSearchParams({
-    browse_category: discipline,
-    content_format: 'audio,video',
-    limit,
-    page,
-    sort_by: 'original_air_time',
-    desc: 'true',
-  });
-  if (instructorId) params.set('instructor_id', instructorId);
-  if (maxDuration) params.set('duration', String(Number(maxDuration) * 60));
+  // not `fitness_discipline` — mirror it exactly. Note: Peloton's `duration`
+  // param is an EXACT match (class-length bucket), not a max, so we DON'T send
+  // it — we cap length client-side below instead.
+  const buildParams = (withInstructor) => {
+    const p = new URLSearchParams({
+      browse_category: discipline,
+      content_format: 'audio,video',
+      limit,
+      page,
+      sort_by: 'original_air_time',
+      desc: 'true',
+    });
+    if (withInstructor && instructorId) p.set('instructor_id', instructorId);
+    return p;
+  };
 
   try {
-    const data = await pelotonFetch(`/api/v2/ride/archived?${params.toString()}`, { token });
+    let data = await pelotonFetch(`/api/v2/ride/archived?${buildParams(true).toString()}`, { token });
+    // Instructor is a soft preference: if filtering by a favorite returns nothing
+    // for this discipline (e.g. they don't teach strength), fall back to any.
+    if (instructorId && !(data.data || []).length) {
+      data = await pelotonFetch(`/api/v2/ride/archived?${buildParams(false).toString()}`, { token });
+    }
     const instructorsById = {};
     for (const i of data.instructors || []) instructorsById[i.id] = i;
 
-    const classes = (data.data || []).map((ride) => normalize(ride, instructorsById));
+    let classes = (data.data || []).map((ride) => normalize(ride, instructorsById));
+
+    // Cap class length here (max, not exact) so we never zero out a discipline.
+    if (maxDuration) {
+      const cap = Number(maxDuration);
+      const within = classes.filter((c) => c.duration <= cap);
+      if (within.length) classes = within; // keep all if nothing fits, rather than empty
+    }
 
     // Difficulty is a SOFT preference, not a hard filter — difficulty_rating_avg
     // clusters high (~7–8) and varies by discipline, so a hard range returns

@@ -34,7 +34,7 @@ function buildPath(points) {
 }
 
 export default function QuestBoard() {
-  const { schedule, progress, loading, planWeek, rerollDay, makeEasier, skipDay, toggleDone } = useSchedule();
+  const { schedule, progress, settings, loading, planWeek, rerollDay, makeEasier, skipDay, toggleDone } = useSchedule();
   const [selectedIndex, setSelectedIndex] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showPortrait, setShowPortrait] = useState(false);
@@ -73,15 +73,19 @@ export default function QuestBoard() {
         {/* Header: portrait + level, week title, XP bar */}
         <div className="flex items-start gap-4 mb-5">
           <button onClick={() => setShowPortrait(true)} aria-label="View portrait" style={{ position: 'relative', flexShrink: 0, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
-            <div style={{ width: 62, height: 62, borderRadius: '50%', background: COLORS.stone, border: `3px solid ${COLORS.iron}`, boxShadow: `0 0 0 3px ${COLORS.bronze}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <User size={26} color={COLORS.parchmentDim} />
+            <div style={{ width: 62, height: 62, borderRadius: '50%', overflow: 'hidden', background: COLORS.stone, border: `3px solid ${COLORS.iron}`, boxShadow: `0 0 0 3px ${COLORS.bronze}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {settings.avatar ? (
+                <img src={settings.avatar} alt="Portrait" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                <User size={26} color={COLORS.parchmentDim} />
+              )}
             </div>
             <div style={{ position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)', background: COLORS.gold, color: COLORS.ink, fontFamily: FONT_MONO, fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 8, border: `2px solid ${COLORS.bg}` }}>
               LV {progress.level}
             </div>
           </button>
           <div className="flex-1 pt-1">
-            <div className="uppercase mb-1" style={{ fontFamily: FONT_HEADING, color: COLORS.gold, letterSpacing: '0.2em', fontSize: 10 }}>Quest Board</div>
+            <div className="uppercase mb-1" style={{ fontFamily: FONT_HEADING, color: COLORS.gold, letterSpacing: '0.2em', fontSize: 10 }}>Peloton RPG</div>
             <h1 className="text-3xl" style={{ fontFamily: FONT_DISPLAY, color: COLORS.parchment, fontWeight: 400 }}>This Week</h1>
             <div className="flex items-center gap-2 mt-2">
               <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: COLORS.stone, border: `1px solid ${COLORS.iron}` }}>

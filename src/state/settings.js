@@ -10,6 +10,7 @@ export const DEFAULT_SETTINGS = {
   difficulty: 'any', // any | beginner | intermediate | advanced
   maxDuration: 30, // minutes
   weekTemplate: DEFAULT_WEEK_TEMPLATE, // preferred Mon–Sun day types
+  avatar: null, // data URL of the character portrait, or null for the default
 };
 
 export function loadSettings() {

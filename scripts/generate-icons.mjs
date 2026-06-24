@@ -10,9 +10,39 @@ const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, '..', 'public', 'icons');
 mkdirSync(outDir, { recursive: true });
 
-// COLORS.bg stone background with a COLORS.gold centred square mark.
-const BG = [0x16, 0x12, 0x0d];
-const GOLD = [0xd9, 0xa4, 0x41];
+// Themed icon: a gold sword on a near-black stone field, with a bronze grip.
+const BG = [0x16, 0x12, 0x0d]; // COLORS.bg stone
+const GOLD = [0xd9, 0xa4, 0x41]; // COLORS.gold blade/guard/pommel
+const BRONZE = [0x6b, 0x4f, 0x2e]; // COLORS.bronze grip + border
+
+// Returns the RGB for pixel (x, y) of an `size`×`size` sword icon.
+function pixelColor(x, y, size) {
+  const cx = size / 2;
+  const u = x / size;
+  const v = y / size; // 0 = top
+  const bladeTop = 0.13, tipEnd = 0.22, guardY = 0.60, guardH = 0.05;
+  const gripEnd = 0.82, bladeHalf = 0.045 * size, guardHalf = 0.19 * size;
+  const dx = Math.abs(x - cx);
+
+  // Outer rounded border ring for definition.
+  const m = 0.06 * size;
+  if (x < m || y < m || x > size - m || y > size - m) return BRONZE;
+
+  // Blade (with a tapered tip).
+  if (v >= bladeTop && v < guardY) {
+    let half = bladeHalf;
+    if (v < tipEnd) half = bladeHalf * ((v - bladeTop) / (tipEnd - bladeTop)); // taper to point
+    if (dx <= half) return GOLD;
+  }
+  // Crossguard.
+  if (v >= guardY && v < guardY + guardH && dx <= guardHalf) return GOLD;
+  // Grip.
+  if (v >= guardY + guardH && v < gripEnd && dx <= 0.03 * size) return BRONZE;
+  // Pommel.
+  if (Math.hypot(x - cx, y - 0.85 * size) <= 0.05 * size) return GOLD;
+
+  return BG;
+}
 
 function crc32(buf) {
   let c = ~0;
@@ -41,14 +71,12 @@ function makePng(size) {
   ihdr[9] = 2; // colour type: truecolour RGB
   // bytes 10-12 (compression, filter, interlace) stay 0
 
-  const inset = Math.round(size * 0.28);
   const raw = Buffer.alloc(size * (size * 3 + 1));
   let p = 0;
   for (let y = 0; y < size; y++) {
     raw[p++] = 0; // filter byte: none
     for (let x = 0; x < size; x++) {
-      const mark = x >= inset && x < size - inset && y >= inset && y < size - inset;
-      const [r, g, b] = mark ? GOLD : BG;
+      const [r, g, b] = pixelColor(x, y, size);
       raw[p++] = r;
       raw[p++] = g;
       raw[p++] = b;

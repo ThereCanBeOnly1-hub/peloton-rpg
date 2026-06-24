@@ -1,6 +1,6 @@
 {
-  "name": "Quest Board",
-  "short_name": "QuestBoard",
+  "name": "Peloton RPG",
+  "short_name": "Peloton RPG",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#16120D",

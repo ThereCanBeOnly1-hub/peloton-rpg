@@ -43,7 +43,20 @@ export default function DayModal({ day, index, onClose, onToggleDone, onReroll, 
 
           {paired && (
             <div style={{ fontSize: 13, lineHeight: 1.5, marginBottom: 14, color: COLORS.bronze }}>
-              Stretch: <em>{day.stretchName}</em> &middot; {day.stretchDuration} min
+              Stretch:{' '}
+              {day.stretchClassId ? (
+                <a
+                  href={classLink(day.stretchClassId, 'stretching')}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: COLORS.crimson, textDecoration: 'underline' }}
+                >
+                  {day.stretchName}
+                </a>
+              ) : (
+                <em>{day.stretchName}</em>
+              )}{' '}
+              &middot; {day.stretchDuration} min
             </div>
           )}
 
