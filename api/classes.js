@@ -1,7 +1,9 @@
-// GET /api/classes — fetch + filter the Peloton class library, normalized to
-// the fields the app actually uses. Query params mirror the engine's filters:
+// GET /api/classes — fetch the Peloton class library for a discipline,
+// normalized to the fields the app uses. Returns a POOL; the client picks the
+// right class per day (focus rotation + favorite instructors across all
+// favorites + stretch pairing), so this endpoint stays simple.
 //   discipline=cycling|strength|stretching  (required)
-//   instructorId, difficultyMin, difficultyMax, maxDuration (minutes), limit
+//   difficulty=any|beginner|intermediate|advanced, maxDuration (minutes), limit
 import { getToken, pelotonFetch, sendError } from './_peloton.js';
 
 // Reduce a raw Peloton ride into the shape the client/engine consume. The API
@@ -33,10 +35,9 @@ export default async function handler(req, res) {
 
   const {
     discipline,
-    instructorId,
     difficulty = 'any', // any | beginner | intermediate | advanced
     maxDuration,
-    limit = '40',
+    limit = '60',
     page = '0',
   } = req.query;
 
@@ -45,27 +46,19 @@ export default async function handler(req, res) {
   // The web app browses by `browse_category` (strength|cycling|stretching|…),
   // not `fitness_discipline` — mirror it exactly. Note: Peloton's `duration`
   // param is an EXACT match (class-length bucket), not a max, so we DON'T send
-  // it — we cap length client-side below instead.
-  const buildParams = (withInstructor) => {
-    const p = new URLSearchParams({
-      browse_category: discipline,
-      content_format: 'audio,video',
-      limit,
-      page,
-      sort_by: 'original_air_time',
-      desc: 'true',
-    });
-    if (withInstructor && instructorId) p.set('instructor_id', instructorId);
-    return p;
-  };
+  // it — we cap length client-side below instead. A generous limit gives the
+  // client room to match focus + favorite instructors.
+  const params = new URLSearchParams({
+    browse_category: discipline,
+    content_format: 'audio,video',
+    limit,
+    page,
+    sort_by: 'original_air_time',
+    desc: 'true',
+  });
 
   try {
-    let data = await pelotonFetch(`/api/v2/ride/archived?${buildParams(true).toString()}`, { token });
-    // Instructor is a soft preference: if filtering by a favorite returns nothing
-    // for this discipline (e.g. they don't teach strength), fall back to any.
-    if (instructorId && !(data.data || []).length) {
-      data = await pelotonFetch(`/api/v2/ride/archived?${buildParams(false).toString()}`, { token });
-    }
+    const data = await pelotonFetch(`/api/v2/ride/archived?${params.toString()}`, { token });
     const instructorsById = {};
     for (const i of data.instructors || []) instructorsById[i.id] = i;
 

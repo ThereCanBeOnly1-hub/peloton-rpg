@@ -4,7 +4,7 @@
 // adjust when life gets in the way. All of it persists in localStorage.
 import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { buildWeek } from '../engine/balance.js';
-import { fillSchedule, getClasses, AuthError } from '../api/peloton.js';
+import { fillSchedule, rollDay, AuthError } from '../api/peloton.js';
 import { pickQuestTitle } from '../constants/questTitles.js';
 import { loadSettings, saveSettings } from './settings.js';
 
@@ -114,23 +114,15 @@ export function ScheduleProvider({ children }) {
     }
   }, [titleize, handleAuthError]);
 
-  // Fetch a fresh class for one day. `overrides` can narrow the search
-  // (e.g. easier difficulty / shorter); defaults come from the day + settings.
+  // Fetch a fresh class for one day (different from the current one) and
+  // re-pair its stretch. `overrides` can narrow the search (e.g. the
+  // "make it easier" hatch).
   const rerollDay = useCallback(async (index, overrides = {}) => {
     setError(null);
     const day = scheduleRef.current[index];
     if (!day) return;
-    const s = settingsRef.current;
-    const type = overrides.type || (day.type === 'rest' ? 'strength' : day.type);
-    const focus = overrides.focus ?? day.focus ?? 'Full Body';
-    const discipline = type === 'cycle' ? 'cycling' : 'strength';
-    const difficulty = overrides.difficulty ?? s.difficulty;
-    const maxDuration = overrides.maxDuration ?? s.maxDuration;
-    const instructorId = overrides.instructorId ?? s.instructorIds?.[0];
     try {
-      const classes = await getClasses({ discipline, instructorId, difficulty, maxDuration });
-      // Prefer a class different from the current one.
-      const main = classes.find((c) => c.id !== day.classId) || classes[0] || null;
+      const { type, focus, main, stretch } = await rollDay(day, settingsRef.current, overrides);
       setSchedule((prev) =>
         prev.map((d, i) =>
           i === index
@@ -142,6 +134,9 @@ export function ScheduleProvider({ children }) {
                 name: main?.title ?? null,
                 instructor: main?.instructor ?? null,
                 duration: main?.duration ?? null,
+                stretchClassId: stretch?.id ?? null,
+                stretchName: stretch?.title ?? null,
+                stretchDuration: stretch?.duration ?? null,
                 questTitle: type === d.type ? d.questTitle : pickQuestTitle(type, weekStamp),
               }
             : d
